@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickleball League — 4 Courts (Offline)</title>
+<style>
+  :root{ --pad:12px; --gap:12px; --radius:12px; }
+  html,body{margin:0;padding:0;font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;background:#f7f7fb;color:#111}
+  header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid #ececf3}
+  header h1{font-size:18px;margin:0 8px 0 0}
+  .pill{background:#f1f3ff;border:1px solid #e0e5ff;border-radius:999px;padding:6px 10px;font-size:12px}
+  main{display:grid;grid-template-columns:360px 1fr;gap:var(--gap);padding:var(--pad)}
+  @media (max-width: 1000px){ main{grid-template-columns:1fr} }
+  .leftcol{grid-column: 1 / 2}
+  .rightcol{grid-column: 2 / 3}
+  .span-all{grid-column: 1 / -1}
+  .card{background:#fff;border:1px solid #e7e7f0;border-radius:var(--radius);box-shadow:0 .5px 0 rgba(0,0,0,.04)}
+  .card h2{margin:0;padding:12px 14px;border-bottom:1px solid #efeff6;font-size:16px}
+  .section{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  input,button,select{font:inherit}
+  input[type="text"], input[type="number"]{padding:8px 10px;border:1px solid #dcdceb;border-radius:10px;min-width:0}
+  input[type="text"]{flex:1}
+  .btn{border:1px solid #d2d2e6;background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
+  .btn.primary{background:#155ee7;border-color:#1352c6;color:#fff}
+  .btn.warn{background:#fee;border-color:#f6caca}
+  .muted{color:#666;font-size:12px}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace}
+  .list{display:flex;flex-direction:column;gap:6px}
+  .player{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px dashed #e6e6f2;border-radius:10px;background:#fafbff}
+  .tag{font-size:12px;background:#eef3ff;border:1px solid #dfe7ff;border-radius:999px;padding:2px 8px}
+  .tag.green{background:#e9fbef;border-color:#c9f0d5}
+  .right{margin-left:auto}
+  .courts{display:grid;grid-template-columns:repeat(2, minmax(280px,1fr));gap:12px;padding:12px}
+  @media (max-width: 800px){ .courts{grid-template-columns:1fr} }
+  .court{border:1px solid #e7e7f0;border-radius:14px;background:#fff;display:flex;flex-direction:column}
+  .court header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #efeff6;background:linear-gradient(#fff,#fafafe)}
+  .court .body{padding:12px;display:flex;flex-direction:column;gap:8px}
+  .teams{display:grid;grid-template-columns:1fr 28px 1fr;gap:8px;align-items:center}
+  .team{display:flex;flex-direction:column;gap:6px}
+  .slot{padding:8px 10px;border:1px solid #e7e7f2;border-radius:10px;background:#f8faff;display:flex;justify-content:space-between}
+  .vs{font-weight:700;text-align:center}
+  .progress{height:10px;background:#eef1ff;border-radius:999px;overflow:hidden;border:1px solid #e1e6ff}
+  .bar{height:100%;background:#155ee7;width:0%}
+  .leaderboard{padding:12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #eee;padding:8px 6px;text-align:left;vertical-align:top}
+  th{font-weight:600;background:#fafbff}
+  .nowrap{white-space:nowrap}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid #e0e0ee;background:#f7f7ff;cursor:pointer}
+  .chip.active{background:#155ee7;color:#fff;border-color:#155ee7}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pickleball League</h1>
+  <span class="pill">Offline • Cookies (localStorage fallback)</span>
+  <span class="pill">4 Courts</span>
+  <span class="pill">Win +1 / Loss −1 • Defend Highest +2</span>
+</header>
+
+<main>
+  <!-- Left sidebar: Players & League Settings (controls only) -->
+  <section class="card leftcol" id="playersSettingsCard">
+    <h2>Players & League Settings</h2>
+    <div class="section">
+      <div class="row">
+        <input id="name" type="text" placeholder="Player name">
+        <input id="rating" type="number" placeholder="Seed score (e.g., 1000)" step="1">
+        <button class="btn primary" id="addPlayerBtn">Add Player</button>
+        <button class="btn" id="addRandomBtn" title="Add a random player for testing">Add Random Player</button>
+      </div>
+      <div class="row muted">Higher seed scores start on higher courts when you press <strong>Seed Courts</strong>.</div>
+      <div class="row">
+        <label class="muted">League match limit:</label>
+        <input id="matchLimit" type="number" min="1" step="1" placeholder="e.g., 20" style="width:110px">
+        <button class="btn" id="applyLimitBtn">Apply</button>
+        <span class="right muted">Matches played: <span id="played" class="mono">0</span>/<span id="limit" class="mono">—</span></span>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn" id="seedBtn">Seed Courts</button>
+        <button class="btn" id="shufflePairsBtn">Shuffle Pairs (keep courts)</button>
+        <button class="btn" id="newLeagueBtn">New League (reset points & matches)</button>
+        <button class="btn warn" id="resetBtn" title="Clear all saved data">Reset App</button>
+        <button class="btn" id="exportBtn">Export</button>
+        <label class="btn" for="importFile">Import</label>
+        <input id="importFile" type="file" accept="application/json" style="display:none">
+      </div>
+      <div class="progress"><div id="bar" class="bar"></div></div>
+    </div>
+  </section>
+
+  <!-- Right column: tournament live views -->
+  <section class="card rightcol">
+    <h2>Courts</h2>
+    <div class="courts" id="courts"></div>
+    <div class="section muted">Enter the match score (Team A - Team B), e.g., 11-7, then submit. Winner is calculated from the score.</div>
+  </section>
+
+  <section class="card rightcol" id="leaderboardCard" style="display:none">
+    <h2>Leaderboard</h2>
+    <div class="leaderboard">
+      <table id="leaderboardTable">
+        <thead><tr><th>#</th><th>Player</th><th>Points</th><th>Seed</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card rightcol">
+    <h2>Summary (Wins/Losses, Win%)</h2>
+    <div class="section" style="overflow:auto">
+      <table id="summaryTable">
+        <thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Win %</th><th>Points</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card rightcol">
+    <h2>Match History</h2>
+    <div class="section">
+      <div class="chips">
+        <span class="chip active" data-filter="all">All</span>
+        <span class="chip" data-filter="court1">Court 1</span>
+        <span class="chip" data-filter="court2">Court 2</span>
+        <span class="chip" data-filter="court3">Court 3</span>
+        <span class="chip" data-filter="court4">Court 4</span>
+        <select id="playerFilter">
+          <option value="">Filter by player…</option>
+        </select>
+        <button class="btn" id="clearHistoryBtn" title="Remove all saved history">Clear History</button>
+      </div>
+      <div style="overflow:auto">
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th class="nowrap">When</th>
+              <th>Court</th>
+              <th>Team A</th>
+              <th>Team B</th>
+              <th>Score</th>
+              <th>Winner</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom full-width: Player List (with count) -->
+  <section class="card span-all" id="playersListCard">
+    <h2>Players (<span id="playerCount">0</span>)</h2>
+    <div class="section">
+      <div id="playerList" class="list"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ---------- Storage ---------- */
+const COOKIE_NAME = "pb_league_state";
+const COOKIE_MAX_AGE_DAYS = 365;
+
+function setCookie(name, value, days){
+  try{
+    const d = new Date();
+    d.setTime(d.getTime() + (days*24*60*60*1000));
+    const expires = "expires="+ d.toUTCString();
+    document.cookie = name + "=" + encodeURIComponent(value) + ";" + expires + ";path=/;SameSite=Lax";
+  }catch(e){}
+}
+function getCookie(name){
+  const cname = name + "=";
+  const parts = document.cookie.split(";");
+  for(let c of parts){
+    c = c.trim();
+    if(c.indexOf(cname) === 0) return decodeURIComponent(c.substring(cname.length));
+  }
+  return null;
+}
+function hasCookieSupport(){
+  try{
+    setCookie("__t","1",1);
+    const v = getCookie("__t");
+    setCookie("__t","", -1);
+    return v === "1";
+  }catch(e){ return false; }
+}
+const Storage = (function(){
+  const cookiesOk = hasCookieSupport();
+  return {
+    save(state){
+      const json = JSON.stringify(state);
+      try{
+        if(cookiesOk){ setCookie(COOKIE_NAME, json, COOKIE_MAX_AGE_DAYS); }
+        else { localStorage.setItem(COOKIE_NAME, json); }
+      }catch(e){ alert("Save failed: "+e.message); }
+    },
+    load(){
+      let raw = getCookie(COOKIE_NAME);
+      if(!raw){ raw = localStorage.getItem(COOKIE_NAME); }
+      if(!raw) return null;
+      try{ return JSON.parse(raw); }catch(e){ return null; }
+    },
+    clear(){
+      setCookie(COOKIE_NAME, "", -1);
+      try{ localStorage.removeItem(COOKIE_NAME); }catch(e){}
+    }
+  };
+})();
+
+/* ---------- State ---------- */
+let state = {
+  players: [],     // {id, name, seed, points}
+  courts: [[],[],[],[]],  // array of player ids per court (queue)
+  matchesPlayed: 0,
+  matchLimit: null,
+  matches: []      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
+};
+let nextId = 1;
+
+/* ---------- Helpers ---------- */
+const $ = (id)=>document.getElementById(id);
+const clone = (x)=>JSON.parse(JSON.stringify(x));
+
+function save(){ Storage.save(state); }
+function load(){
+  const s = Storage.load();
+  if(s){
+    state = s;
+    if(!Array.isArray(state.matches)) state.matches = [];
+    nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
+  }
+}
+
+function playerById(id){ return state.players.find(p=>p.id===id); }
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+function randomName(){
+  const first = ["Alex","Jordan","Taylor","Morgan","Casey","Riley","Cameron","Drew","Reese","Skyler","Bailey","Avery","Quinn","Rowan","Parker","Hayden","Jesse","Kendall","Logan","Peyton"];
+  const lastNum = Math.floor(Math.random()*900+100);
+  return first[Math.floor(Math.random()*first.length)] + " " + lastNum;
+}
+
+/* ---------- Rendering ---------- */
+function renderPlayers(){
+  const list = $("playerList");
+  list.innerHTML = "";
+  const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
+  for(const p of sorted){
+    const row = document.createElement("div");
+    row.className = "player";
+    row.innerHTML = `
+      <span>${p.name}</span>
+      <span class="row">
+        <span class="tag mono" title="Seed">${p.seed}</span>
+        <span class="tag green mono" title="League points">${p.points ?? 0} pts</span>
+        <button class="btn" data-act="seedPlus" data-id="${p.id}" title="Increase seed">Seed +</button>
+        <button class="btn" data-act="seedMinus" data-id="${p.id}" title="Decrease seed">Seed −</button>
+        <button class="btn warn" data-act="remove" data-id="${p.id}">Remove</button>
+      </span>
+    `;
+    list.appendChild(row);
+  }
+  $("playerCount").textContent = state.players.length;
+
+  const sel = $("playerFilter");
+  const selected = sel.value;
+  sel.innerHTML = `<option value="">Filter by player…</option>` + sorted.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");
+  if([...sel.options].some(o=>o.value===selected)) sel.value = selected;
+}
+
+function courtEntryHTML(idx, A, B){
+  return `
+    <div class="teams">
+      <div class="team">${slotHTML(A[0])}${slotHTML(A[1])}</div>
+      <div class="vs">VS</div>
+      <div class="team">${slotHTML(B[0])}${slotHTML(B[1])}</div>
+    </div>
+    <div class="row">
+      <input type="text" inputmode="numeric" pattern="[0-9\\-:x ]*" placeholder="Score e.g., 11-7" id="score-${idx}" style="width:140px">
+      <button class="btn primary" data-court="${idx}" data-submit="score">Submit Score</button>
+      <span class="muted">Winner is determined from score.</span>
+    </div>
+  `;
+}
+function slotHTML(p){
+  if(!p) return `<div class="slot"><span class="muted">Empty</span><span class="tag">—</span></div>`;
+  return `<div class="slot"><span>${p.name}</span><span class="tag mono">${p.points ?? 0} pts</span></div>`;
+}
+function renderCourts(){
+  const wrap = $("courts");
+  wrap.innerHTML = "";
+  state.courts.forEach((court, idx)=>{
+    const div = document.createElement("div");
+    div.className = "court";
+    const courtNo = idx+1;
+    const title = `Court ${courtNo} ${courtNo===4?"(Highest)":courtNo===1?"(Lowest)":""}`;
+    const players = court.map(id => playerById(id)).filter(Boolean);
+    const A = players.slice(0,2);
+    const B = players.slice(2,4);
+    div.innerHTML = `
+      <header>
+        <strong>${title}</strong>
+        <span class="muted">On court: ${court.length}</span>
+      </header>
+      <div class="body">
+        ${courtEntryHTML(idx, A, B)}
+      </div>
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+function renderLeagueMeta(){
+  $("played").textContent = state.matchesPlayed;
+  $("limit").textContent = state.matchLimit ?? "—";
+  const limit = state.matchLimit ?? 0;
+  const pct = (limit>0) ? Math.min(100, Math.round(100*state.matchesPlayed/limit)) : 0;
+  $("bar").style.width = pct + "%";
+  const disable = (state.matchLimit && state.matchesPlayed >= state.matchLimit);
+  document.querySelectorAll('button[data-submit="score"]').forEach(b=>b.disabled = disable);
+  $("leaderboardCard").style.display = disable ? "block" : "none";
+  if(disable) renderLeaderboard();
+}
+
+function renderLeaderboard(){
+  const tbody = document.querySelector("#leaderboardTable tbody");
+  tbody.innerHTML = "";
+  const ranked = clone(state.players).sort((a,b)=> (b.points??0) - (a.points??0) || a.name.localeCompare(b.name));
+  ranked.forEach((p, i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono">${i+1}</td><td>${p.name}</td><td class="mono">${p.points ?? 0}</td><td class="mono">${p.seed}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function computeSummary(){
+  const summary = state.players.map(p=>({id:p.id, name:p.name, points:p.points||0, wins:0, losses:0}));
+  const byId = Object.fromEntries(summary.map(s=>[s.id,s]));
+  for(const m of state.matches){
+    if(m.A.length===2 && m.B.length===2){
+      const winA = (m.winner==="A");
+      for(const id of m.A){ if(byId[id]) winA ? byId[id].wins++ : byId[id].losses++; }
+      for(const id of m.B){ if(byId[id]) winA ? byId[id].losses++ : byId[id].wins++; }
+    }
+  }
+  summary.forEach(s=>{ s.total = s.wins + s.losses; s.winPct = s.total ? Math.round(1000*s.wins/s.total)/10 : 0; });
+  summary.sort((a,b)=> b.points - a.points || b.winPct - a.winPct || a.name.localeCompare(b.name));
+  return summary;
+}
+function renderSummary(){
+  const tbody = document.querySelector("#summaryTable tbody");
+  tbody.innerHTML = "";
+  const data = computeSummary();
+  data.forEach((s,i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono">${i+1}</td><td>${s.name}</td><td class="mono">${s.wins}</td><td class="mono">${s.losses}</td><td class="mono">${s.winPct}%</td><td class="mono">${s.points}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderHistory(){
+  const tbody = document.querySelector("#historyTable tbody");
+  tbody.innerHTML = "";
+  const filterChip = document.querySelector(".chip.active")?.dataset.filter || "all";
+  const playerSel = $("playerFilter").value;
+  let rows = state.matches.slice().reverse();
+  if(filterChip.startsWith("court")){
+    const n = Number(filterChip.replace("court",""));
+    rows = rows.filter(m => m.court === n);
+  }
+  if(playerSel){
+    const pid = Number(playerSel);
+    rows = rows.filter(m => m.A.includes(pid) || m.B.includes(pid));
+  }
+  const fmt = (ts)=>{
+    const d = new Date(ts);
+    const pad=(x)=>String(x).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  for(const m of rows){
+    const namesA = m.A.map(id => playerById(id)?.name || `#${id}`).join(", ");
+    const namesB = m.B.map(id => playerById(id)?.name || `#${id}`).join(", ");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono nowrap">${fmt(m.ts)}</td>
+      <td>Court ${m.court}</td>
+      <td>${namesA}</td>
+      <td>${namesB}</td>
+      <td class="mono">${m.scoreA}-${m.scoreB}</td>
+      <td>${m.winner==="A"?"Team A":"Team B"}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function rerender(){
+  renderPlayers();
+  renderCourts();
+  renderLeagueMeta();
+  renderLeaderboard();
+  renderSummary();
+  renderHistory();
+  save();
+}
+
+/* ---------- Core ops ---------- */
+function addPlayer(name, seed){
+  name = (name||"").trim();
+  if(!name) return;
+  const s = Number(seed);
+  const p = {id: nextId++, name, seed: Number.isFinite(s) ? Math.round(s) : 1000, points: 0};
+  state.players.push(p);
+  rerender();
+}
+function addRandomPlayer(){
+  const n = randomName();
+  const seed = 800 + Math.floor(Math.random()*600); // 800–1400
+  addPlayer(n, seed);
+}
+
+function removePlayer(id){
+  state.players = state.players.filter(p=>p.id!==id);
+  state.courts = state.courts.map(c=>c.filter(pid=>pid!==id));
+  rerender();
+}
+
+function setMatchLimit(n){
+  const v = Number(n);
+  state.matchLimit = Number.isFinite(v) && v>0 ? Math.round(v) : null;
+  rerender();
+}
+
+function seedCourts(){
+  const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
+  const c1=[],c2=[],c3=[],c4=[];
+  sorted.forEach((p,i)=>{
+    if(i<4) c4.push(p.id);
+    else if(i<8) c3.push(p.id);
+    else if(i<12) c2.push(p.id);
+    else c1.push(p.id);
+  });
+  state.courts=[shuffle(c1),shuffle(c2),shuffle(c3),shuffle(c4)];
+  state.matchesPlayed = 0;
+  state.players.forEach(p=>p.points=0);
+  state.matches = [];
+  rerender();
+}
+
+function shufflePairsSameCourt(){
+  state.courts = state.courts.map(c=>shuffle(c));
+  rerender();
+}
+
+/* ---------- Input parsing & result handling ---------- */
+function parseScore(input){
+  if(!input) return null;
+  const m = String(input).trim().match(/^(\d+)\s*[-:x]\s*(\d+)$/i);
+  if(!m) return null;
+  return {a: Number(m[1]), b: Number(m[2])};
+}
+
+function submitScore(courtIndex){
+  if(state.matchLimit && state.matchesPlayed >= state.matchLimit) return;
+
+  const court = state.courts[courtIndex] || [];
+  const A = court.slice(0,2);
+  const B = court.slice(2,4);
+  if(A.length<2 || B.length<2){
+    alert("Need 4 players on the court to record a result.");
+    return;
+  }
+  const input = document.getElementById(`score-${courtIndex}`).value;
+  const parsed = parseScore(input);
+  if(!parsed){ alert("Invalid score. Use format like 11-7."); return; }
+  const scoreA = parsed.a, scoreB = parsed.b;
+  if(scoreA===scoreB){ alert("Ties are not supported. Enter a winning score."); return; }
+  const winner = (scoreA > scoreB) ? "A" : "B";
+
+  applyResult(courtIndex, winner, scoreA, scoreB);
+}
+
+function applyResult(courtIndex, winner, scoreA, scoreB){
+  const court = state.courts[courtIndex] || [];
+  const A = court.slice(0,2);
+  const B = court.slice(2,4);
+
+  const winners = (winner==="A") ? A : B;
+  const losers  = (winner==="A") ? B : A;
+
+  const highest = (courtIndex===3);
+  if(highest){
+    winners.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)+2; });
+  }else{
+    winners.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)+1; });
+  }
+  losers.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)-1; });
+
+  state.matches.push({
+    ts: Date.now(),
+    court: courtIndex+1,
+    A: A.slice(),
+    B: B.slice(),
+    winner: winner,
+    scoreA: scoreA,
+    scoreB: scoreB
+  });
+
+  const playedSet = new Set([...A, ...B]);
+  const remaining = court.filter(id=>!playedSet.has(id));
+
+  const upIndex = Math.min(3, courtIndex+1);
+  const downIndex = Math.max(0, courtIndex-1);
+
+  function insertFrontAndShuffle(arr, ids){
+    const newArr = ids.concat(arr);
+    return shuffle(newArr);
+  }
+
+  const newCourts = state.courts.map(c=>c.slice());
+  newCourts[courtIndex] = remaining;
+
+  if(courtIndex < 3){
+    newCourts[upIndex] = insertFrontAndShuffle(newCourts[upIndex], winners);
+  }else{
+    newCourts[courtIndex] = insertFrontAndShuffle(newCourts[courtIndex], winners);
+  }
+
+  if(courtIndex > 0){
+    newCourts[downIndex] = insertFrontAndShuffle(newCourts[downIndex], losers);
+  }else{
+    newCourts[courtIndex] = insertFrontAndShuffle(newCourts[courtIndex], losers);
+  }
+
+  state.courts = newCourts;
+  state.matchesPlayed += 1;
+  rerender();
+}
+
+/* ---------- Export / Import ---------- */
+function exportState(){
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pickleball_league_state.json";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 400);
+}
+function importState(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data || !Array.isArray(data.players)) throw new Error("Invalid file");
+      state = data;
+      if(!Array.isArray(state.matches)) state.matches = [];
+      nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
+      rerender();
+    }catch(err){
+      alert("Import failed: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- Events ---------- */
+document.addEventListener("click", (e)=>{
+  const t = e.target;
+  if(t.id==="addPlayerBtn"){
+    addPlayer(document.getElementById("name").value, document.getElementById("rating").value);
+    document.getElementById("name").value=""; document.getElementById("rating").value="";
+  }
+  if(t.id==="addRandomBtn"){ addRandomPlayer(); }
+  if(t.id==="seedBtn"){ seedCourts(); }
+  if(t.id==="shufflePairsBtn"){ shufflePairsSameCourt(); }
+  if(t.id==="applyLimitBtn"){ setMatchLimit(document.getElementById("matchLimit").value); }
+  if(t.id==="newLeagueBtn"){
+    if(confirm("Start a new league? This resets points and match count (players & seeding stay the same).")){
+      state.players.forEach(p=>p.points=0);
+      state.matchesPlayed = 0;
+      state.matches = [];
+      rerender();
+    }
+  }
+  if(t.id==="resetBtn"){
+    if(confirm("Reset the entire app? This clears saved data (players, courts, league, history).")){
+      Storage.clear();
+      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[]};
+      nextId=1; rerender();
+    }
+  }
+  if(t.id==="exportBtn"){ exportState(); }
+  if(t.dataset && t.dataset.act==="remove"){
+    removePlayer(Number(t.dataset.id));
+  }
+  if(t.dataset && t.dataset.act==="seedPlus"){
+    const p = playerById(Number(t.dataset.id)); if(p){ p.seed = (p.seed||0) + 10; rerender(); }
+  }
+  if(t.dataset && t.dataset.act==="seedMinus"){
+    const p = playerById(Number(t.dataset.id)); if(p){ p.seed = (p.seed||0) - 10; rerender(); }
+  }
+  if(t.dataset && t.dataset.submit==="score"){
+    submitScore(Number(t.dataset.court));
+  }
+  if(t.classList.contains("chip")){
+    document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));
+    t.classList.add("active");
+    renderHistory();
+  }
+  if(t.id==="clearHistoryBtn"){
+    if(confirm("Clear all match history? This cannot be undone.")){
+      state.matches = [];
+      rerender();
+    }
+  }
+});
+
+document.getElementById("playerFilter").addEventListener("change", ()=>{ renderHistory(); });
+
+/* ---------- Init ---------- */
+load();
+rerender();
+</script>
+</body>
+</html>
