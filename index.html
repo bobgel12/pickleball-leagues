@@ -73,7 +73,9 @@
         <button class="btn primary" id="addPlayerBtn">Add Player</button>
         <button class="btn" id="addRandomBtn" title="Add a random player for testing">Add Random Player</button>
       </div>
-      <div class="row muted">Higher seed scores start on higher courts when you press <strong>Seed Courts</strong>.</div>
+      <div class="row muted">
+        <strong>Fair Seed Courts:</strong> Balanced teams across skill tiers. <strong>Gradual Start:</strong> Top 8 players start, others join later.
+      </div>
       <div class="row">
         <label class="muted">League match limit:</label>
         <input id="matchLimit" type="number" min="1" step="1" placeholder="e.g., 20" style="width:110px">
@@ -81,7 +83,8 @@
         <span class="right muted">Matches played: <span id="played" class="mono">0</span>/<span id="limit" class="mono">—</span></span>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
-        <button class="btn" id="seedBtn">Seed Courts</button>
+        <button class="btn" id="seedBtn">Fair Seed Courts</button>
+        <button class="btn" id="gradualSeedBtn" title="Start with top 8 players, add others gradually">Gradual Start</button>
         <button class="btn" id="shufflePairsBtn">Shuffle Pairs (keep courts)</button>
         <button class="btn" id="newLeagueBtn">New League (reset points & matches)</button>
         <button class="btn warn" id="resetBtn" title="Clear all saved data">Reset App</button>
@@ -515,18 +518,117 @@ function setMatchLimit(n){
 
 function seedCourts(){
   const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
+  
+  // Fair seeding based on skill tiers and balanced teams
   const c1=[],c2=[],c3=[],c4=[];
-  sorted.forEach((p,i)=>{
-    if(i<4) c4.push(p.id);
-    else if(i<8) c3.push(p.id);
-    else if(i<12) c2.push(p.id);
-    else c1.push(p.id);
+  
+  // Group players into skill tiers
+  const tiers = {
+    elite: [],    // Top 25% - seeds 1200+
+    advanced: [], // Next 25% - seeds 1000-1199
+    intermediate: [], // Next 25% - seeds 800-999
+    beginner: []  // Bottom 25% - seeds <800
+  };
+  
+  sorted.forEach(p => {
+    if (p.seed >= 1200) tiers.elite.push(p);
+    else if (p.seed >= 1000) tiers.advanced.push(p);
+    else if (p.seed >= 800) tiers.intermediate.push(p);
+    else tiers.beginner.push(p);
   });
-  state.courts=[shuffle(c1),shuffle(c2),shuffle(c3),shuffle(c4)];
+  
+  // Distribute players across courts with balanced teams
+  // Court 4 (Highest): Mix of elite and advanced
+  // Court 3: Mix of advanced and intermediate  
+  // Court 2: Mix of intermediate and beginner
+  // Court 1 (Lowest): Primarily beginner with some intermediate
+  
+  // Court 4: Elite + Advanced (strongest players)
+  const court4Players = [...tiers.elite.slice(0, 2), ...tiers.advanced.slice(0, 2)];
+  c4.push(...court4Players.map(p => p.id));
+  
+  // Court 3: Advanced + Intermediate (next tier)
+  const court3Players = [...tiers.advanced.slice(2, 4), ...tiers.intermediate.slice(0, 2)];
+  c3.push(...court3Players.map(p => p.id));
+  
+  // Court 2: Intermediate + Beginner (middle tier)
+  const court2Players = [...tiers.intermediate.slice(2, 4), ...tiers.beginner.slice(0, 2)];
+  c2.push(...court2Players.map(p => p.id));
+  
+  // Court 1: Remaining players (lowest tier)
+  const court1Players = [...tiers.beginner.slice(2), ...tiers.intermediate.slice(4), ...tiers.advanced.slice(4), ...tiers.elite.slice(2)];
+  c1.push(...court1Players.map(p => p.id));
+  
+  // Balance teams within each court (avoid stacking)
+  const balanceTeams = (court) => {
+    if (court.length < 4) return court;
+    const players = court.map(id => playerById(id)).filter(Boolean);
+    players.sort((a,b) => b.seed - a.seed);
+    // Alternate high/low seeds for balanced teams
+    return [players[0], players[3], players[1], players[2]].map(p => p.id);
+  };
+  
+  state.courts = [
+    balanceTeams(c1), 
+    balanceTeams(c2), 
+    balanceTeams(c3), 
+    balanceTeams(c4)
+  ];
+  
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
   rerender();
+}
+
+function gradualSeedCourts(){
+  const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
+  
+  // Start with only top 8 players (2 courts)
+  const top8 = sorted.slice(0, 8);
+  const remaining = sorted.slice(8);
+  
+  // Place top 8 on Courts 3 and 4 (highest courts)
+  const c1=[],c2=[],c3=[],c4=[];
+  
+  // Court 4: Top 4 players
+  const court4Players = top8.slice(0, 4);
+  c4.push(...court4Players.map(p => p.id));
+  
+  // Court 3: Next 4 players  
+  const court3Players = top8.slice(4, 8);
+  c3.push(...court3Players.map(p => p.id));
+  
+  // Courts 1 & 2: Remaining players (if any)
+  const court2Players = remaining.slice(0, 4);
+  const court1Players = remaining.slice(4, 8);
+  c2.push(...court2Players.map(p => p.id));
+  c1.push(...court1Players.map(p => p.id));
+  
+  // Balance teams within each court
+  const balanceTeams = (court) => {
+    if (court.length < 4) return court;
+    const players = court.map(id => playerById(id)).filter(Boolean);
+    players.sort((a,b) => b.seed - a.seed);
+    return [players[0], players[3], players[1], players[2]].map(p => p.id);
+  };
+  
+  state.courts = [
+    balanceTeams(c1), 
+    balanceTeams(c2), 
+    balanceTeams(c3), 
+    balanceTeams(c4)
+  ];
+  
+  state.matchesPlayed = 0;
+  state.players.forEach(p=>p.points=0);
+  state.matches = [];
+  rerender();
+  
+  // Show info about gradual start
+  if (remaining.length > 0) {
+    alert(`Gradual Start: Top 8 players on Courts 3-4. ${remaining.length} players will join as others are eliminated or after initial matches.`);
+  }
 }
 
 function shufflePairsSameCourt(){
@@ -683,6 +785,7 @@ document.addEventListener("click", (e)=>{
   }
   if(t.id==="addRandomBtn"){ addRandomPlayer(); }
   if(t.id==="seedBtn"){ seedCourts(); }
+  if(t.id==="gradualSeedBtn"){ gradualSeedCourts(); }
   if(t.id==="shufflePairsBtn"){ shufflePairsSameCourt(); }
   if(t.id==="applyLimitBtn"){ setMatchLimit(document.getElementById("matchLimit").value); }
   if(t.id==="newLeagueBtn"){
