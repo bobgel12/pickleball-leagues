@@ -139,6 +139,74 @@
   </section>
 
   <section class="card rightcol">
+    <h2 style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleHelp()">
+      Help & Guide
+      <span id="helpToggle" style="font-size:12px;color:#666;">▼</span>
+    </h2>
+    <div class="section" id="helpContent" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h3 style="margin:0 0 10px 0;font-size:14px;color:#155ee7;">🎯 Scoring Systems</h3>
+        <div style="margin-bottom:15px;padding:10px;background:#f8faff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Simple Scoring:</strong> Win +1, Loss -1. Perfect for casual leagues. Easy to understand and track. No court difficulty consideration.
+        </div>
+        <div style="margin-bottom:15px;padding:10px;background:#f8faff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Court Weighted:</strong> Higher courts give more points. Court 1=0.5x, Court 2=0.75x, Court 3=1.0x, Court 4=1.5x. Rewards playing on higher courts.
+        </div>
+        <div style="margin-bottom:15px;padding:10px;background:#f8faff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Smart Points:</strong> Most sophisticated system. Considers court difficulty, opponent strength, and margin of victory. Base 10 points + bonuses.
+        </div>
+      </div>
+      
+      <div style="margin-bottom:20px;">
+        <h3 style="margin:0 0 10px 0;font-size:14px;color:#155ee7;">🌱 Seeding Methods</h3>
+        <div style="margin-bottom:15px;padding:10px;background:#f0f8ff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Fair Seed Courts (Recommended):</strong><br>
+          • Groups players by skill tiers (Elite/Advanced/Intermediate/Beginner)<br>
+          • Distributes across courts with balanced teams<br>
+          • Prevents skill stacking and unfair advantages<br>
+          • Best for 8-16 players with mixed skill levels
+        </div>
+        <div style="margin-bottom:15px;padding:10px;background:#f0f8ff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Gradual Start:</strong><br>
+          • Starts with top 8 players on highest courts<br>
+          • Others join as players are eliminated<br>
+          • Prevents system overwhelm with large groups<br>
+          • Perfect for 16+ player tournaments
+        </div>
+        <div style="margin-bottom:15px;padding:10px;background:#f0f8ff;border-radius:8px;border-left:3px solid #155ee7;">
+          <strong>Classic Seed:</strong><br>
+          • Original simple seeding method<br>
+          • Top 4 on Court 4, next 4 on Court 3, etc.<br>
+          • Familiar to existing users<br>
+          • Good for consistent skill levels
+        </div>
+      </div>
+      
+      <div style="margin-bottom:20px;">
+        <h3 style="margin:0 0 10px 0;font-size:14px;color:#155ee7;">📊 How to Use</h3>
+        <div style="padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;line-height:1.4;">
+          <strong>Step 1:</strong> Add players with accurate seed scores (800-1400 range)<br>
+          <strong>Step 2:</strong> Select your preferred scoring system<br>
+          <strong>Step 3:</strong> Choose a seeding method that fits your group<br>
+          <strong>Step 4:</strong> Set match limit and start playing!<br>
+          <strong>Step 5:</strong> Enter scores and watch rankings update automatically
+        </div>
+      </div>
+      
+      <div style="margin-bottom:20px;">
+        <h3 style="margin:0 0 10px 0;font-size:14px;color:#155ee7;">💡 Tips & Recommendations</h3>
+        <div style="padding:10px;background:#fff8f0;border-radius:8px;font-size:12px;line-height:1.4;">
+          <strong>For Beginners:</strong> Use Simple scoring + Classic seed<br>
+          <strong>For Mixed Skill:</strong> Use Court Weighted + Fair seed<br>
+          <strong>For Competitive:</strong> Use Smart Points + Fair seed<br>
+          <strong>For Large Groups:</strong> Use any scoring + Gradual start<br>
+          <strong>Seed Scores:</strong> 1200+ Elite, 1000-1199 Advanced, 800-999 Intermediate, <800 Beginner
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card rightcol">
     <h2>Match History</h2>
     <div class="section">
       <div class="chips">
@@ -255,6 +323,18 @@ let nextId = 1;
 /* ---------- Helpers ---------- */
 const $ = (id)=>document.getElementById(id);
 const clone = (x)=>JSON.parse(JSON.stringify(x));
+
+function toggleHelp(){
+  const content = $("helpContent");
+  const toggle = $("helpToggle");
+  if (content.style.display === "none") {
+    content.style.display = "block";
+    toggle.textContent = "▲";
+  } else {
+    content.style.display = "none";
+    toggle.textContent = "▼";
+  }
+}
 
 function save(){ Storage.save(state); }
 function load(){
