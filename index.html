@@ -358,9 +358,9 @@ function shuffle(arr){
 }
 
 function randomName(){
-  const first = ["Alex","Jordan","Taylor","Morgan","Casey","Riley","Cameron","Drew","Reese","Skyler","Bailey","Avery","Quinn","Rowan","Parker","Hayden","Jesse","Kendall","Logan","Peyton"];
-  const lastNum = Math.floor(Math.random()*900+100);
-  return first[Math.floor(Math.random()*first.length)] + " " + lastNum;
+  const first = ["Alex","Jordan","Taylor","Morgan","Casey","Riley","Cameron","Drew","Reese","Skyler","Bailey","Avery","Quinn","Rowan","Parker","Hayden","Jesse","Kendall","Logan","Peyton","Sam","Jamie","Blake","Sage","River","Phoenix","Dakota","Finley","Emery","Harper","Charlie","Sage","Indigo","Ocean","Rain","Storm","Sunny","Winter","Autumn","Spring"];
+  const last = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson","Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores"];
+  return first[Math.floor(Math.random()*first.length)] + " " + last[Math.floor(Math.random()*last.length)];
 }
 
 /* ---------- Rendering ---------- */
@@ -616,8 +616,27 @@ function addPlayer(name, seed){
 }
 function addRandomPlayer(){
   const n = randomName();
-  // Generate random DUPR score between 2.000 and 8.000
-  const seed = 2.000 + Math.random() * 6.000; // 2.000–8.000
+  // Generate realistic DUPR score distribution
+  // Most players fall in the 3.000-6.000 range with some outliers
+  let seed;
+  const rand = Math.random();
+  
+  if (rand < 0.05) {
+    // 5% chance for elite players (6.000-8.000)
+    seed = 6.000 + Math.random() * 2.000;
+  } else if (rand < 0.25) {
+    // 20% chance for advanced players (4.500-6.000)
+    seed = 4.500 + Math.random() * 1.500;
+  } else if (rand < 0.70) {
+    // 45% chance for intermediate players (3.000-4.500)
+    seed = 3.000 + Math.random() * 1.500;
+  } else {
+    // 30% chance for beginner players (2.000-3.000)
+    seed = 2.000 + Math.random() * 1.000;
+  }
+  
+  // Round to 3 decimal places
+  seed = Math.round(seed * 1000) / 1000;
   addPlayer(n, seed);
 }
 
