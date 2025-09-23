@@ -58,7 +58,7 @@
   <h1>Pickleball League</h1>
   <span class="pill">Offline • Cookies (localStorage fallback)</span>
   <span class="pill">4 Courts</span>
-  <span class="pill">Win +1 / Loss −1 • Defend Highest +2</span>
+  <span class="pill">Smart Points: Court + Opponent + Margin</span>
   <span class="pill" style="background:#fff3cd;border-color:#ffeaa7;color:#856404;" title="Use at your own risk. No warranty or liability assumed.">⚠️ Use at Your Own Risk</span>
 </header>
 
@@ -118,7 +118,8 @@
         <tbody></tbody>
       </table>
       <div class="muted" style="margin-top:8px;font-size:11px;">
-        Points % = Points Scored ÷ Total Points in All Games (e.g., 11-5 score = 11÷16 = 68.8%)
+        Points % = Weighted Points ÷ Total Weighted Points<br>
+        Weighted by: Court difficulty (Court 1=0.5x, Court 4=1.5x) + Opponent strength
       </div>
     </div>
   </section>
@@ -362,14 +363,25 @@ function renderLeaderboard(){
 }
 
 function computeSummary(){
-  const summary = state.players.map(p=>({id:p.id, name:p.name, points:p.points||0, wins:0, losses:0, pointsScored:0, pointsAllowed:0}));
+  const summary = state.players.map(p=>({id:p.id, name:p.name, points:p.points||0, wins:0, losses:0, pointsScored:0, pointsAllowed:0, weightedPoints:0, totalWeight:0}));
   const byId = Object.fromEntries(summary.map(s=>[s.id,s]));
+  
   for(const m of state.matches){
     if(m.A.length===2 && m.B.length===2){
       const winA = (m.winner==="A");
       const scoreA = m.scoreA || 0;
       const scoreB = m.scoreB || 0;
       const totalPoints = scoreA + scoreB;
+      const courtIndex = m.court - 1; // Convert to 0-based
+      
+      // Court difficulty weight (higher courts = more weight)
+      const courtWeight = [0.5, 0.75, 1.0, 1.5][courtIndex];
+      
+      // Calculate opponent strength for weighting
+      const teamA = m.A.map(id => playerById(id)).filter(Boolean);
+      const teamB = m.B.map(id => playerById(id)).filter(Boolean);
+      const avgSeedA = teamA.reduce((sum, p) => sum + p.seed, 0) / teamA.length;
+      const avgSeedB = teamB.reduce((sum, p) => sum + p.seed, 0) / teamB.length;
       
       // Update wins/losses
       for(const id of m.A){ 
@@ -385,26 +397,35 @@ function computeSummary(){
         }
       }
       
-      // Update points scored/allowed
+      // Update points scored/allowed with court and opponent weighting
       for(const id of m.A){ 
         if(byId[id]) {
           byId[id].pointsScored += scoreA;
           byId[id].pointsAllowed += scoreB;
+          // Weighted points: points scored * court weight * opponent strength factor
+          const opponentStrength = avgSeedB / 1000; // Normalize opponent strength
+          byId[id].weightedPoints += scoreA * courtWeight * opponentStrength;
+          byId[id].totalWeight += totalPoints * courtWeight * opponentStrength;
         }
       }
       for(const id of m.B){ 
         if(byId[id]) {
           byId[id].pointsScored += scoreB;
           byId[id].pointsAllowed += scoreA;
+          // Weighted points: points scored * court weight * opponent strength factor
+          const opponentStrength = avgSeedA / 1000; // Normalize opponent strength
+          byId[id].weightedPoints += scoreB * courtWeight * opponentStrength;
+          byId[id].totalWeight += totalPoints * courtWeight * opponentStrength;
         }
       }
     }
   }
+  
   summary.forEach(s=>{ 
     s.total = s.wins + s.losses; 
     s.totalPoints = s.pointsScored + s.pointsAllowed;
-    // Calculate win percentage based on points scored vs total points in games
-    s.winPct = s.totalPoints > 0 ? Math.round(1000*s.pointsScored/s.totalPoints)/10 : 0; 
+    // Calculate weighted win percentage: weighted points / total weighted points
+    s.winPct = s.totalWeight > 0 ? Math.round(1000*s.weightedPoints/s.totalWeight)/10 : 0; 
   });
   summary.sort((a,b)=> b.points - a.points || b.winPct - a.winPct || a.name.localeCompare(b.name));
   return summary;
@@ -549,13 +570,41 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
   const winners = (winner==="A") ? A : B;
   const losers  = (winner==="A") ? B : A;
 
-  const highest = (courtIndex===3);
-  if(highest){
-    winners.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)+2; });
-  }else{
-    winners.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)+1; });
-  }
-  losers.forEach(id=> { const p=playerById(id); if(p) p.points = (p.points||0)-1; });
+  // Calculate points based on improved system
+  const courtMultiplier = [0.5, 0.75, 1.0, 1.5][courtIndex]; // Court 1=0.5x, Court 4=1.5x
+  const marginBonus = Math.abs(scoreA - scoreB) / 10; // Bonus for margin of victory
+  const basePoints = 10; // Base points for a win
+  
+  // Calculate opponent strength (average seed of opposing team)
+  const opponentSeeds = (winner==="A") ? B : A;
+  const avgOpponentSeed = opponentSeeds.reduce((sum, id) => {
+    const p = playerById(id);
+    return sum + (p ? p.seed : 1000);
+  }, 0) / opponentSeeds.length;
+  
+  // Calculate player's own average seed
+  const playerSeeds = (winner==="A") ? A : B;
+  const avgPlayerSeed = playerSeeds.reduce((sum, id) => {
+    const p = playerById(id);
+    return sum + (p ? p.seed : 1000);
+  }, 0) / playerSeeds.length;
+  
+  // Strength difference bonus (beating higher-rated opponents)
+  const strengthDiff = (avgOpponentSeed - avgPlayerSeed) / 100; // Normalize to reasonable range
+  const strengthBonus = Math.max(0, strengthDiff * 0.5); // Max 5 point bonus for beating much higher rated
+  
+  // Calculate final points
+  const winPoints = Math.round((basePoints + marginBonus + strengthBonus) * courtMultiplier);
+  const lossPoints = Math.round(-2 * courtMultiplier); // Smaller penalty, no negative points
+  
+  winners.forEach(id=> { 
+    const p=playerById(id); 
+    if(p) p.points = Math.max(0, (p.points||0) + winPoints); // Never go below 0
+  });
+  losers.forEach(id=> { 
+    const p=playerById(id); 
+    if(p) p.points = Math.max(0, (p.points||0) + lossPoints); // Never go below 0
+  });
 
   state.matches.push({
     ts: Date.now(),
