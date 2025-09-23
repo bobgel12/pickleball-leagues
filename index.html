@@ -111,12 +111,15 @@
   </section>
 
   <section class="card rightcol">
-    <h2>Summary (Wins/Losses, Win%)</h2>
+    <h2>Summary (Wins/Losses, Points%)</h2>
     <div class="section" style="overflow:auto">
       <table id="summaryTable">
-        <thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Win %</th><th>Points</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Points %</th><th>Points</th></tr></thead>
         <tbody></tbody>
       </table>
+      <div class="muted" style="margin-top:8px;font-size:11px;">
+        Points % = Points Scored ÷ Total Points in All Games (e.g., 11-5 score = 11÷16 = 68.8%)
+      </div>
     </div>
   </section>
 
@@ -359,16 +362,50 @@ function renderLeaderboard(){
 }
 
 function computeSummary(){
-  const summary = state.players.map(p=>({id:p.id, name:p.name, points:p.points||0, wins:0, losses:0}));
+  const summary = state.players.map(p=>({id:p.id, name:p.name, points:p.points||0, wins:0, losses:0, pointsScored:0, pointsAllowed:0}));
   const byId = Object.fromEntries(summary.map(s=>[s.id,s]));
   for(const m of state.matches){
     if(m.A.length===2 && m.B.length===2){
       const winA = (m.winner==="A");
-      for(const id of m.A){ if(byId[id]) winA ? byId[id].wins++ : byId[id].losses++; }
-      for(const id of m.B){ if(byId[id]) winA ? byId[id].losses++ : byId[id].wins++; }
+      const scoreA = m.scoreA || 0;
+      const scoreB = m.scoreB || 0;
+      const totalPoints = scoreA + scoreB;
+      
+      // Update wins/losses
+      for(const id of m.A){ 
+        if(byId[id]) {
+          if(winA) byId[id].wins++; 
+          else byId[id].losses++;
+        }
+      }
+      for(const id of m.B){ 
+        if(byId[id]) {
+          if(winA) byId[id].losses++; 
+          else byId[id].wins++;
+        }
+      }
+      
+      // Update points scored/allowed
+      for(const id of m.A){ 
+        if(byId[id]) {
+          byId[id].pointsScored += scoreA;
+          byId[id].pointsAllowed += scoreB;
+        }
+      }
+      for(const id of m.B){ 
+        if(byId[id]) {
+          byId[id].pointsScored += scoreB;
+          byId[id].pointsAllowed += scoreA;
+        }
+      }
     }
   }
-  summary.forEach(s=>{ s.total = s.wins + s.losses; s.winPct = s.total ? Math.round(1000*s.wins/s.total)/10 : 0; });
+  summary.forEach(s=>{ 
+    s.total = s.wins + s.losses; 
+    s.totalPoints = s.pointsScored + s.pointsAllowed;
+    // Calculate win percentage based on points scored vs total points in games
+    s.winPct = s.totalPoints > 0 ? Math.round(1000*s.pointsScored/s.totalPoints)/10 : 0; 
+  });
   summary.sort((a,b)=> b.points - a.points || b.winPct - a.winPct || a.name.localeCompare(b.name));
   return summary;
 }
