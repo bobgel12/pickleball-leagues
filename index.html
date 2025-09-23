@@ -112,7 +112,16 @@
   <section class="card rightcol">
     <h2>Courts</h2>
     <div class="courts" id="courts"></div>
-    <div class="section muted">Enter the match score (Team A - Team B), e.g., 11-7, then submit. Winner is calculated from the score.</div>
+    <div class="section">
+      <div class="row" style="justify-content:center;margin-top:15px;">
+        <button class="btn primary" id="submitRoundBtn" style="font-size:16px;padding:12px 24px;">
+          Submit Round
+        </button>
+      </div>
+      <div class="muted" style="text-align:center;margin-top:8px;">
+        Enter scores for all courts, then submit the entire round. Players will move to new courts after all matches are complete.
+      </div>
+    </div>
   </section>
 
   <section class="card rightcol" id="leaderboardCard" style="display:none">
@@ -402,8 +411,7 @@ function courtEntryHTML(idx, A, B){
     </div>
     <div class="row">
       <input type="text" inputmode="numeric" pattern="[0-9\\-:x ]*" placeholder="Score e.g., 11-7" id="score-${idx}" style="width:140px">
-      <button class="btn primary" data-court="${idx}" data-submit="score">Submit Score</button>
-      <span class="muted">Winner is determined from score.</span>
+      <span class="muted">Enter score for this court</span>
     </div>
   `;
 }
@@ -801,24 +809,72 @@ function parseScore(input){
   return {a: Number(m[1]), b: Number(m[2])};
 }
 
-function submitScore(courtIndex){
+function submitRound(){
   if(state.matchLimit && state.matchesPlayed >= state.matchLimit) return;
 
-  const court = state.courts[courtIndex] || [];
-  const A = court.slice(0,2);
-  const B = court.slice(2,4);
-  if(A.length<2 || B.length<2){
-    alert("Need 4 players on the court to record a result.");
+  // Collect all scores and validate
+  const roundResults = [];
+  let hasValidScores = false;
+  let hasInvalidScores = false;
+  let errorMessages = [];
+
+  for(let courtIndex = 0; courtIndex < 4; courtIndex++){
+    const court = state.courts[courtIndex] || [];
+    const A = court.slice(0,2);
+    const B = court.slice(2,4);
+    
+    // Skip empty courts
+    if(A.length < 2 || B.length < 2) continue;
+    
+    const input = document.getElementById(`score-${courtIndex}`).value;
+    const parsed = parseScore(input);
+    
+    if(!parsed){
+      hasInvalidScores = true;
+      errorMessages.push(`Court ${courtIndex + 1}: Invalid score format`);
+      continue;
+    }
+    
+    const scoreA = parsed.a, scoreB = parsed.b;
+    if(scoreA === scoreB){
+      hasInvalidScores = true;
+      errorMessages.push(`Court ${courtIndex + 1}: Ties not supported`);
+      continue;
+    }
+    
+    const winner = (scoreA > scoreB) ? "A" : "B";
+    roundResults.push({courtIndex, winner, scoreA, scoreB, A, B});
+    hasValidScores = true;
+  }
+
+  // Show errors if any
+  if(hasInvalidScores){
+    alert("Please fix these errors:\n" + errorMessages.join("\n"));
     return;
   }
-  const input = document.getElementById(`score-${courtIndex}`).value;
-  const parsed = parseScore(input);
-  if(!parsed){ alert("Invalid score. Use format like 11-7."); return; }
-  const scoreA = parsed.a, scoreB = parsed.b;
-  if(scoreA===scoreB){ alert("Ties are not supported. Enter a winning score."); return; }
-  const winner = (scoreA > scoreB) ? "A" : "B";
 
-  applyResult(courtIndex, winner, scoreA, scoreB);
+  // Check if we have any valid matches to process
+  if(!hasValidScores){
+    alert("No valid matches to submit. Please enter scores for courts with 4 players.");
+    return;
+  }
+
+  // Process all valid matches in the round
+  roundResults.forEach(result => {
+    applyResult(result.courtIndex, result.winner, result.scoreA, result.scoreB);
+  });
+
+  // Process court movements after all matches are complete
+  processRoundResults();
+
+  // Clear all score inputs
+  for(let i = 0; i < 4; i++){
+    const input = document.getElementById(`score-${i}`);
+    if(input) input.value = "";
+  }
+
+  // Update the display
+  rerender();
 }
 
 function applyResult(courtIndex, winner, scoreA, scoreB){
@@ -887,35 +943,82 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
     scoreB: scoreB
   });
 
-  const playedSet = new Set([...A, ...B]);
-  const remaining = court.filter(id=>!playedSet.has(id));
-
-  const upIndex = Math.min(3, courtIndex+1);
-  const downIndex = Math.max(0, courtIndex-1);
-
-  function insertFrontAndShuffle(arr, ids){
-    const newArr = ids.concat(arr);
-    return shuffle(newArr);
-  }
-
-  const newCourts = state.courts.map(c=>c.slice());
-  newCourts[courtIndex] = remaining;
-
-  if(courtIndex < 3){
-    newCourts[upIndex] = insertFrontAndShuffle(newCourts[upIndex], winners);
-  }else{
-    newCourts[courtIndex] = insertFrontAndShuffle(newCourts[courtIndex], winners);
-  }
-
-  if(courtIndex > 0){
-    newCourts[downIndex] = insertFrontAndShuffle(newCourts[downIndex], losers);
-  }else{
-    newCourts[courtIndex] = insertFrontAndShuffle(newCourts[courtIndex], losers);
-  }
-
-  state.courts = newCourts;
   state.matchesPlayed += 1;
-  rerender();
+}
+
+function processRoundResults(){
+  // This function handles court movement after all matches in a round are complete
+  const allPlayers = [];
+  const courtResults = [];
+  
+  // Collect all players and their results from each court
+  for(let courtIndex = 0; courtIndex < 4; courtIndex++){
+    const court = state.courts[courtIndex] || [];
+    if(court.length >= 4){
+      const A = court.slice(0,2);
+      const B = court.slice(2,4);
+      
+      // Get the most recent match for this court
+      const recentMatch = state.matches.slice().reverse().find(m => m.court === courtIndex + 1);
+      if(recentMatch){
+        const winners = (recentMatch.winner === "A") ? A : B;
+        const losers = (recentMatch.winner === "A") ? B : A;
+        
+        courtResults.push({
+          courtIndex,
+          winners,
+          losers,
+          remaining: court.filter(id => !A.includes(id) && !B.includes(id))
+        });
+        
+        allPlayers.push(...winners, ...losers);
+      }
+    }
+  }
+  
+  // Redistribute players based on results
+  const newCourts = [[],[],[],[]];
+  
+  // Collect all players who need new court assignments
+  const playersToRedistribute = [];
+  courtResults.forEach(result => {
+    playersToRedistribute.push(...result.winners, ...result.losers, ...result.remaining);
+  });
+  
+  // Sort players by points (descending) for court assignment
+  const sortedPlayers = playersToRedistribute.map(id => playerById(id)).filter(Boolean)
+    .sort((a,b) => (b.points || 0) - (a.points || 0) || b.seed - a.seed);
+  
+  // Redistribute players across courts
+  const totalPlayers = sortedPlayers.length;
+  if(totalPlayers <= 4){
+    newCourts[3] = sortedPlayers.map(p => p.id);
+  } else if(totalPlayers <= 8){
+    const half = Math.ceil(totalPlayers/2);
+    newCourts[3] = sortedPlayers.slice(0, half).map(p => p.id);
+    newCourts[2] = sortedPlayers.slice(half).map(p => p.id);
+  } else if(totalPlayers <= 12){
+    const third = Math.ceil(totalPlayers/3);
+    newCourts[3] = sortedPlayers.slice(0, third).map(p => p.id);
+    newCourts[2] = sortedPlayers.slice(third, third * 2).map(p => p.id);
+    newCourts[1] = sortedPlayers.slice(third * 2).map(p => p.id);
+  } else {
+    const quarter = Math.ceil(totalPlayers/4);
+    newCourts[3] = sortedPlayers.slice(0, quarter).map(p => p.id);
+    newCourts[2] = sortedPlayers.slice(quarter, quarter * 2).map(p => p.id);
+    newCourts[1] = sortedPlayers.slice(quarter * 2, quarter * 3).map(p => p.id);
+    newCourts[0] = sortedPlayers.slice(quarter * 3).map(p => p.id);
+  }
+  
+  // Balance teams within each court
+  const balanceTeams = (court) => {
+    if (court.length < 4) return court;
+    const players = court.map(id => playerById(id)).filter(Boolean);
+    players.sort((a,b) => b.seed - a.seed);
+    return [players[0], players[3], players[1], players[2]].map(p => p.id);
+  };
+  
+  state.courts = newCourts.map(balanceTeams);
 }
 
 /* ---------- Export / Import ---------- */
@@ -991,8 +1094,8 @@ document.addEventListener("click", (e)=>{
       rerender(); 
     }
   }
-  if(t.dataset && t.dataset.submit==="score"){
-    submitScore(Number(t.dataset.court));
+  if(t.id==="submitRoundBtn"){
+    submitRound();
   }
   if(t.classList.contains("chip")){
     document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));
