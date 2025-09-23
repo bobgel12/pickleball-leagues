@@ -161,10 +161,12 @@
         <h3 style="margin:0 0 10px 0;font-size:14px;color:#155ee7;">🌱 Seeding Methods</h3>
         <div style="margin-bottom:15px;padding:10px;background:#f0f8ff;border-radius:8px;border-left:3px solid #155ee7;">
           <strong>Fair Seed Courts (Recommended):</strong><br>
-          • Groups players by skill tiers (Elite/Advanced/Intermediate/Beginner)<br>
-          • Distributes across courts with balanced teams<br>
-          • Prevents skill stacking and unfair advantages<br>
-          • Best for 8-16 players with mixed skill levels
+          • Adapts to any group size (1-20+ players)<br>
+          • 1-4 players: All on Court 4<br>
+          • 5-8 players: Split across Courts 3-4<br>
+          • 9-12 players: Use Courts 2-4<br>
+          • 13+ players: Use all 4 courts<br>
+          • Balanced teams within each court
         </div>
         <div style="margin-bottom:15px;padding:10px;background:#f0f8ff;border-radius:8px;border-left:3px solid #155ee7;">
           <strong>Gradual Start:</strong><br>
@@ -654,46 +656,48 @@ function setMatchLimit(n){
 
 function seedCourts(){
   const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
+  const totalPlayers = sorted.length;
   
-  // Fair seeding based on skill tiers and balanced teams
+  // Initialize empty courts
   const c1=[],c2=[],c3=[],c4=[];
   
-  // Group players into skill tiers based on DUPR ratings
-  const tiers = {
-    elite: [],    // Top 25% - DUPR 6.000+
-    advanced: [], // Next 25% - DUPR 4.500-5.999
-    intermediate: [], // Next 25% - DUPR 3.000-4.499
-    beginner: []  // Bottom 25% - DUPR <3.000
-  };
-  
-  sorted.forEach(p => {
-    if (p.seed >= 6.000) tiers.elite.push(p);
-    else if (p.seed >= 4.500) tiers.advanced.push(p);
-    else if (p.seed >= 3.000) tiers.intermediate.push(p);
-    else tiers.beginner.push(p);
-  });
-  
-  // Distribute players across courts with balanced teams
-  // Court 4 (Highest): Mix of elite and advanced
-  // Court 3: Mix of advanced and intermediate  
-  // Court 2: Mix of intermediate and beginner
-  // Court 1 (Lowest): Primarily beginner with some intermediate
-  
-  // Court 4: Elite + Advanced (strongest players)
-  const court4Players = [...tiers.elite.slice(0, 2), ...tiers.advanced.slice(0, 2)];
-  c4.push(...court4Players.map(p => p.id));
-  
-  // Court 3: Advanced + Intermediate (next tier)
-  const court3Players = [...tiers.advanced.slice(2, 4), ...tiers.intermediate.slice(0, 2)];
-  c3.push(...court3Players.map(p => p.id));
-  
-  // Court 2: Intermediate + Beginner (middle tier)
-  const court2Players = [...tiers.intermediate.slice(2, 4), ...tiers.beginner.slice(0, 2)];
-  c2.push(...court2Players.map(p => p.id));
-  
-  // Court 1: Remaining players (lowest tier)
-  const court1Players = [...tiers.beginner.slice(2), ...tiers.intermediate.slice(4), ...tiers.advanced.slice(4), ...tiers.elite.slice(2)];
-  c1.push(...court1Players.map(p => p.id));
+  // Handle different group sizes with flexible distribution
+  if (totalPlayers <= 4) {
+    // 1-4 players: All on Court 4, balanced teams
+    const players = sorted.slice(0, 4);
+    c4.push(...players.map(p => p.id));
+  } else if (totalPlayers <= 8) {
+    // 5-8 players: Distribute across 2 courts (3&4)
+    const topHalf = sorted.slice(0, Math.ceil(totalPlayers/2));
+    const bottomHalf = sorted.slice(Math.ceil(totalPlayers/2));
+    
+    // Court 4: Top half
+    c4.push(...topHalf.map(p => p.id));
+    // Court 3: Bottom half
+    c3.push(...bottomHalf.map(p => p.id));
+  } else if (totalPlayers <= 12) {
+    // 9-12 players: Distribute across 3 courts (2,3,4)
+    const third = Math.ceil(totalPlayers/3);
+    const topThird = sorted.slice(0, third);
+    const midThird = sorted.slice(third, third * 2);
+    const bottomThird = sorted.slice(third * 2);
+    
+    c4.push(...topThird.map(p => p.id));
+    c3.push(...midThird.map(p => p.id));
+    c2.push(...bottomThird.map(p => p.id));
+  } else {
+    // 13+ players: Use all 4 courts with skill-based distribution
+    const quarter = Math.ceil(totalPlayers/4);
+    const topQuarter = sorted.slice(0, quarter);
+    const upperMid = sorted.slice(quarter, quarter * 2);
+    const lowerMid = sorted.slice(quarter * 2, quarter * 3);
+    const bottomQuarter = sorted.slice(quarter * 3);
+    
+    c4.push(...topQuarter.map(p => p.id));
+    c3.push(...upperMid.map(p => p.id));
+    c2.push(...lowerMid.map(p => p.id));
+    c1.push(...bottomQuarter.map(p => p.id));
+  }
   
   // Balance teams within each court (avoid stacking)
   const balanceTeams = (court) => {
