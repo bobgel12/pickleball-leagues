@@ -51,6 +51,12 @@
   .chips{display:flex;gap:6px;flex-wrap:wrap}
   .chip{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid #e0e0ee;background:#f7f7ff;cursor:pointer}
   .chip.active{background:#155ee7;color:#fff;border-color:#155ee7}
+  .chip.leader-secondary{background:#e6fff5;border-color:#b8f3d9;color:#0b6845}
+  #leaderHighlights .chip,#leaderboardHighlights .chip{cursor:default}
+  tr.points-leader{background:#fff6db;}
+  tr.points-leader td{font-weight:600;}
+  tr.pct-leader{background:#e8fff8;}
+  tr.points-leader.pct-leader{background:#fff2d9;}
 </style>
 </head>
 <body>
@@ -86,11 +92,11 @@
         <label class="muted">Scoring System:</label>
         <select id="scoringSystem" style="width:200px">
           <option value="simple">Simple (Win +1, Loss -1)</option>
-          <option value="court">Court Weighted (Court 1=0.5x, Court 4=1.5x)</option>
+          <option value="court">Court Weighted (Court 1=1 pt … Court 4=4 pts)</option>
           <option value="smart">Smart Points (Court + Opponent + Margin)</option>
         </select>
         <span class="muted" id="scoringExplanation" style="font-size:11px;margin-left:8px;">
-          Simple: Basic win/loss points. Court Weighted: Higher courts give more points. Smart: Considers court, opponent strength, and margin of victory.
+          Simple: Basic win/loss points. Court Weighted: Courts 1-4 award 1-4 pts for wins, no loss penalty. Smart: Considers court, opponent strength, and margin of victory.
         </span>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -131,12 +137,14 @@
         <thead><tr><th>#</th><th>Player</th><th>Points</th><th>DUPR</th></tr></thead>
         <tbody></tbody>
       </table>
+      <div id="leaderboardHighlights" class="chips" style="margin-top:12px;"></div>
     </div>
   </section>
 
   <section class="card rightcol">
     <h2>Summary (Wins/Losses, Points%)</h2>
     <div class="section" style="overflow:auto">
+      <div id="leaderHighlights" class="chips" style="margin-bottom:8px;"></div>
       <table id="summaryTable">
         <thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Losses</th><th>Points %</th><th>Points</th></tr></thead>
         <tbody></tbody>
@@ -159,7 +167,7 @@
           <strong>Simple Scoring:</strong> Win +1, Loss -1. Perfect for casual leagues. Easy to understand and track. No court difficulty consideration.
         </div>
         <div style="margin-bottom:15px;padding:10px;background:#f8faff;border-radius:8px;border-left:3px solid #155ee7;">
-          <strong>Court Weighted:</strong> Higher courts give more points. Court 1=0.5x, Court 2=0.75x, Court 3=1.0x, Court 4=1.5x. Rewards playing on higher courts.
+          <strong>Court Weighted:</strong> Higher courts give more points. Court 1=1 pt, Court 2=2 pts, Court 3=3 pts, Court 4=4 pts. Losses do not deduct points.
         </div>
         <div style="margin-bottom:15px;padding:10px;background:#f8faff;border-radius:8px;border-left:3px solid #155ee7;">
           <strong>Smart Points:</strong> Most sophisticated system. Considers court difficulty, opponent strength, and margin of victory. Base 10 points + bonuses.
@@ -327,13 +335,16 @@ let state = {
   courts: [[],[],[],[]],  // array of player ids per court (queue)
   matchesPlayed: 0,
   matchLimit: null,
-  matches: []      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
+  matches: [],      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
+  tournamentStarted: false
 };
 let nextId = 1;
 
 /* ---------- Helpers ---------- */
 const $ = (id)=>document.getElementById(id);
 const clone = (x)=>JSON.parse(JSON.stringify(x));
+const COURT_MULTIPLIERS = [1, 2, 3, 4];
+const SMART_COURT_WEIGHTS = [0.5, 0.75, 1.0, 1.5];
 
 function toggleHelp(){
   const content = $("helpContent");
@@ -353,6 +364,7 @@ function load(){
   if(s){
     state = s;
     if(!Array.isArray(state.matches)) state.matches = [];
+    if(typeof state.tournamentStarted !== "boolean") state.tournamentStarted = false;
     nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
   }
 }
@@ -461,6 +473,7 @@ function renderLeaderboard(){
   const ranked = clone(state.players).sort((a,b)=> (b.points??0) - (a.points??0) || a.name.localeCompare(b.name));
   ranked.forEach((p, i)=>{
     const tr = document.createElement("tr");
+    if(i === 0) tr.classList.add("points-leader");
     tr.innerHTML = `<td class="mono">${i+1}</td><td>${p.name}</td><td class="mono">${p.points ?? 0}</td><td class="mono">${p.seed.toFixed(3)}</td>`;
     tbody.appendChild(tr);
   });
@@ -509,7 +522,7 @@ function computeSummary(){
       
       // Calculate weighted points based on scoring system
       if (scoringSystem === "smart") {
-        const courtWeight = [0.5, 0.75, 1.0, 1.5][courtIndex];
+        const courtWeight = SMART_COURT_WEIGHTS[courtIndex];
         const teamA = m.A.map(id => playerById(id)).filter(Boolean);
         const teamB = m.B.map(id => playerById(id)).filter(Boolean);
         const avgSeedA = teamA.reduce((sum, p) => sum + p.seed, 0) / teamA.length;
@@ -557,12 +570,57 @@ function computeSummary(){
   summary.sort((a,b)=> b.points - a.points || b.winPct - a.winPct || a.name.localeCompare(b.name));
   return summary;
 }
+function updateLeaderHighlights(summaryData){
+  const containers = [
+    document.getElementById("leaderHighlights"),
+    document.getElementById("leaderboardHighlights")
+  ];
+  const hasContainers = containers.some(el => el);
+  if(!hasContainers) return {pointsLeaderId: null, pctLeaderId: null};
+
+  if(!summaryData.length){
+    containers.forEach(el=>{
+      if(el) el.innerHTML = `<span class="chip muted">Add players and record matches to crown leaders.</span>`;
+    });
+    return {pointsLeaderId: null, pctLeaderId: null};
+  }
+
+  const pointsLeader = summaryData[0];
+  let pctLeader = summaryData[0];
+  summaryData.forEach(entry=>{
+    if(entry.winPct > (pctLeader?.winPct ?? -Infinity)){
+      pctLeader = entry;
+    }
+  });
+
+  const pointsName = pointsLeader.name;
+  const pointsScore = pointsLeader.points ?? 0;
+  const pctName = pctLeader?.name ?? pointsName;
+  const pctScore = pctLeader?.winPct ?? pointsLeader.winPct;
+
+  let highlightHTML;
+  if(pointsLeader.id === (pctLeader?.id ?? null)){
+    highlightHTML = `<span class="chip active">Overall Leader: ${pointsName} (${pointsScore} pts · ${pctScore}% points)</span>`;
+  }else{
+    highlightHTML = `<span class="chip active">Points Leader: ${pointsName} (${pointsScore} pts)</span>` +
+      `<span class="chip leader-secondary">Points % Leader: ${pctName} (${pctScore}%)</span>`;
+  }
+
+  containers.forEach(el=>{
+    if(el) el.innerHTML = highlightHTML;
+  });
+
+  return {pointsLeaderId: pointsLeader.id, pctLeaderId: pctLeader?.id ?? null};
+}
 function renderSummary(){
   const tbody = document.querySelector("#summaryTable tbody");
   tbody.innerHTML = "";
   const data = computeSummary();
+  const {pointsLeaderId, pctLeaderId} = updateLeaderHighlights(data);
   data.forEach((s,i)=>{
     const tr = document.createElement("tr");
+    if(s.id === pointsLeaderId) tr.classList.add("points-leader");
+    if(s.id === pctLeaderId) tr.classList.add("pct-leader");
     tr.innerHTML = `<td class="mono">${i+1}</td><td>${s.name}</td><td class="mono">${s.wins}</td><td class="mono">${s.losses}</td><td class="mono">${s.winPct}%</td><td class="mono">${s.points}</td>`;
     tbody.appendChild(tr);
   });
@@ -662,7 +720,7 @@ function setMatchLimit(n){
   rerender();
 }
 
-function seedCourts(){
+function initialSeedCourts(){
   const sorted = clone(state.players).sort((a,b)=>b.seed - a.seed || a.name.localeCompare(b.name));
   const totalPlayers = sorted.length;
   
@@ -726,6 +784,7 @@ function seedCourts(){
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
+  state.tournamentStarted = true;
   rerender();
 }
 
@@ -771,6 +830,7 @@ function gradualSeedCourts(){
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
+  state.tournamentStarted = true;
   rerender();
   
   // Show info about gradual start
@@ -793,6 +853,7 @@ function classicSeedCourts(){
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
+  state.tournamentStarted = true;
   rerender();
 }
 
@@ -894,12 +955,12 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
     lossPoints = -1;
   } else if (scoringSystem === "court") {
     // Court weighted system
-    const courtMultiplier = [0.5, 0.75, 1.0, 1.5][courtIndex];
-    winPoints = Math.round(1 * courtMultiplier);
-    lossPoints = Math.round(-1 * courtMultiplier);
+    const courtMultiplier = COURT_MULTIPLIERS[courtIndex];
+    winPoints = courtMultiplier;
+    lossPoints = 0;
   } else if (scoringSystem === "smart") {
     // Smart points system
-    const courtMultiplier = [0.5, 0.75, 1.0, 1.5][courtIndex];
+    const courtMultiplier = SMART_COURT_WEIGHTS[courtIndex];
     const marginBonus = Math.abs(scoreA - scoreB) / 10;
     const basePoints = 10;
     
@@ -947,78 +1008,51 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
 }
 
 function processRoundResults(){
-  // This function handles court movement after all matches in a round are complete
-  const allPlayers = [];
-  const courtResults = [];
-  
-  // Collect all players and their results from each court
+  const incomingWinners = [[],[],[],[]];
+  const incomingLosers = [[],[],[],[]];
+  const stayingPlayers = state.courts.map(c => c.slice());
+  const reversedMatches = state.matches.slice().reverse();
+
   for(let courtIndex = 0; courtIndex < 4; courtIndex++){
     const court = state.courts[courtIndex] || [];
-    if(court.length >= 4){
-      const A = court.slice(0,2);
-      const B = court.slice(2,4);
-      
-      // Get the most recent match for this court
-      const recentMatch = state.matches.slice().reverse().find(m => m.court === courtIndex + 1);
-      if(recentMatch){
-        const winners = (recentMatch.winner === "A") ? A : B;
-        const losers = (recentMatch.winner === "A") ? B : A;
-        
-        courtResults.push({
-          courtIndex,
-          winners,
-          losers,
-          remaining: court.filter(id => !A.includes(id) && !B.includes(id))
-        });
-        
-        allPlayers.push(...winners, ...losers);
-      }
+    if(court.length < 4) continue;
+
+    const recentMatch = reversedMatches.find(m => m.court === courtIndex + 1);
+    if(!recentMatch) continue;
+
+    const matchPlayers = [...recentMatch.A, ...recentMatch.B];
+    stayingPlayers[courtIndex] = stayingPlayers[courtIndex].filter(id => !matchPlayers.includes(id));
+
+    const winners = (recentMatch.winner === "A") ? recentMatch.A.slice() : recentMatch.B.slice();
+    const losers = (recentMatch.winner === "A") ? recentMatch.B.slice() : recentMatch.A.slice();
+
+    const upTarget = courtIndex < 3 ? courtIndex + 1 : courtIndex;
+    const downTarget = courtIndex > 0 ? courtIndex - 1 : courtIndex;
+
+    if(upTarget === courtIndex){
+      incomingWinners[courtIndex].push(...winners);
+    }else{
+      incomingWinners[upTarget].push(...winners);
+    }
+
+    if(downTarget === courtIndex){
+      incomingLosers[courtIndex].push(...losers);
+    }else{
+      incomingLosers[downTarget].push(...losers);
     }
   }
-  
-  // Redistribute players based on results
-  const newCourts = [[],[],[],[]];
-  
-  // Collect all players who need new court assignments
-  const playersToRedistribute = [];
-  courtResults.forEach(result => {
-    playersToRedistribute.push(...result.winners, ...result.losers, ...result.remaining);
-  });
-  
-  // Sort players by points (descending) for court assignment
-  const sortedPlayers = playersToRedistribute.map(id => playerById(id)).filter(Boolean)
-    .sort((a,b) => (b.points || 0) - (a.points || 0) || b.seed - a.seed);
-  
-  // Redistribute players across courts
-  const totalPlayers = sortedPlayers.length;
-  if(totalPlayers <= 4){
-    newCourts[3] = sortedPlayers.map(p => p.id);
-  } else if(totalPlayers <= 8){
-    const half = Math.ceil(totalPlayers/2);
-    newCourts[3] = sortedPlayers.slice(0, half).map(p => p.id);
-    newCourts[2] = sortedPlayers.slice(half).map(p => p.id);
-  } else if(totalPlayers <= 12){
-    const third = Math.ceil(totalPlayers/3);
-    newCourts[3] = sortedPlayers.slice(0, third).map(p => p.id);
-    newCourts[2] = sortedPlayers.slice(third, third * 2).map(p => p.id);
-    newCourts[1] = sortedPlayers.slice(third * 2).map(p => p.id);
-  } else {
-    const quarter = Math.ceil(totalPlayers/4);
-    newCourts[3] = sortedPlayers.slice(0, quarter).map(p => p.id);
-    newCourts[2] = sortedPlayers.slice(quarter, quarter * 2).map(p => p.id);
-    newCourts[1] = sortedPlayers.slice(quarter * 2, quarter * 3).map(p => p.id);
-    newCourts[0] = sortedPlayers.slice(quarter * 3).map(p => p.id);
+
+  const nextCourts = [[],[],[],[]];
+  for(let i=0;i<4;i++){
+    nextCourts[i] = [
+      ...incomingWinners[i],
+      ...stayingPlayers[i],
+      ...incomingLosers[i]
+    ];
   }
-  
-  // Balance teams within each court
-  const balanceTeams = (court) => {
-    if (court.length < 4) return court;
-    const players = court.map(id => playerById(id)).filter(Boolean);
-    players.sort((a,b) => b.seed - a.seed);
-    return [players[0], players[3], players[1], players[2]].map(p => p.id);
-  };
-  
-  state.courts = newCourts.map(balanceTeams);
+
+  state.courts = nextCourts;
+  state.tournamentStarted = true;
 }
 
 /* ---------- Export / Import ---------- */
@@ -1039,6 +1073,7 @@ function importState(file){
       if(!data || !Array.isArray(data.players)) throw new Error("Invalid file");
       state = data;
       if(!Array.isArray(state.matches)) state.matches = [];
+      if(typeof state.tournamentStarted !== "boolean") state.tournamentStarted = false;
       nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
       rerender();
     }catch(err){
@@ -1056,7 +1091,7 @@ document.addEventListener("click", (e)=>{
     document.getElementById("name").value=""; document.getElementById("rating").value="";
   }
   if(t.id==="addRandomBtn"){ addRandomPlayer(); }
-  if(t.id==="seedBtn"){ seedCourts(); }
+  if(t.id==="seedBtn"){ initialSeedCourts(); }
   if(t.id==="gradualSeedBtn"){ gradualSeedCourts(); }
   if(t.id==="classicSeedBtn"){ classicSeedCourts(); }
   if(t.id==="shufflePairsBtn"){ shufflePairsSameCourt(); }
@@ -1066,13 +1101,14 @@ document.addEventListener("click", (e)=>{
       state.players.forEach(p=>p.points=0);
       state.matchesPlayed = 0;
       state.matches = [];
+      state.tournamentStarted = false;
       rerender();
     }
   }
   if(t.id==="resetBtn"){
     if(confirm("Reset the entire app? This clears saved data (players, courts, league, history).")){
       Storage.clear();
-      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[]};
+      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[],tournamentStarted:false};
       nextId=1; rerender();
     }
   }
@@ -1121,7 +1157,7 @@ document.getElementById("scoringSystem").addEventListener("change", ()=>{
     explanation.textContent = "Simple: Basic win/loss points. Win +1, Loss -1. Easy to understand but doesn't consider court difficulty.";
     percentageExplanation.innerHTML = "Points % = Points Scored ÷ Total Points in All Games";
   } else if (system === "court") {
-    explanation.textContent = "Court Weighted: Higher courts give more points. Court 1=0.5x, Court 2=0.75x, Court 3=1.0x, Court 4=1.5x.";
+    explanation.textContent = "Court Weighted: Higher courts give more points. Court 1=1 pt, Court 2=2 pts, Court 3=3 pts, Court 4=4 pts. Losses do not deduct points.";
     percentageExplanation.innerHTML = "Points % = Points Scored ÷ Total Points in All Games";
   } else if (system === "smart") {
     explanation.textContent = "Smart Points: Considers court difficulty, opponent strength, and margin of victory. Most sophisticated system.";
