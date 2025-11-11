@@ -332,15 +332,18 @@ const Storage = (function(){
 })();
 
 /* ---------- State ---------- */
-let state = {
-  players: [],     // {id, name, seed, points}
-  courts: [[],[],[],[]],  // array of player ids per court (queue)
-  matchesPlayed: 0,
-  matchLimit: null,
-  matches: [],      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
-  tournamentStarted: false,
-  lastPartners: {} // { [playerId]: lastPartnerId }
-};
+function createDefaultState(){
+  return {
+    players: [],     // {id, name, seed, points}
+    courts: [[],[],[],[]],  // array of player ids per court (queue)
+    matchesPlayed: 0,
+    matchLimit: null,
+    matches: [],      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
+    tournamentStarted: false,
+    lastPartners: {} // { [playerId]: lastPartnerId }
+  };
+}
+let state = createDefaultState();
 let nextId = 1;
 
 /* ---------- Helpers ---------- */
@@ -348,6 +351,96 @@ const $ = (id)=>document.getElementById(id);
 const clone = (x)=>JSON.parse(JSON.stringify(x));
 const COURT_MULTIPLIERS = [1, 2, 3, 4];
 const SMART_COURT_WEIGHTS = [0.5, 0.75, 1.0, 1.5];
+
+function normalizeStateStructure(raw){
+  const base = createDefaultState();
+  if(!raw || typeof raw !== "object") return clone(base);
+
+  const normalized = createDefaultState();
+
+  const seenIds = new Set();
+  normalized.players = Array.isArray(raw.players) ? raw.players.map(player=>{
+    if(!player || typeof player !== "object") return null;
+    const id = Number(player.id ?? player.playerId);
+    if(!Number.isFinite(id) || id <= 0 || seenIds.has(id)) return null;
+    seenIds.add(id);
+    const name = String(player.name ?? `Player ${id}`).trim() || `Player ${id}`;
+    const seedNum = Number(player.seed);
+    const seed = Number.isFinite(seedNum) ? Math.max(2.000, Math.min(8.000, Math.round(seedNum * 1000) / 1000)) : 4.500;
+    const pointsNum = Number(player.points);
+    const points = Number.isFinite(pointsNum) ? Math.max(0, Math.round(pointsNum * 1000) / 1000) : 0;
+    return {id, name, seed, points};
+  }).filter(Boolean) : [];
+
+  const playerIds = new Set(normalized.players.map(p=>p.id));
+  const ensurePlayerIds = (team)=>{
+    if(!Array.isArray(team)) return [];
+    return team.map(id=>Number(id)).filter(id=>playerIds.has(id));
+  };
+
+  if(Array.isArray(raw.courts)){
+    normalized.courts = raw.courts.slice(0,4).map(court=>ensurePlayerIds(court));
+  }
+  while(normalized.courts.length < 4){
+    normalized.courts.push([]);
+  }
+
+  const matches = Array.isArray(raw.matches) ? raw.matches.map(match=>{
+    if(!match || typeof match !== "object") return null;
+    const ts = Number(match.ts);
+    const court = Number(match.court);
+    const winner = match.winner === "B" ? "B" : "A";
+    const scoreA = Number(match.scoreA);
+    const scoreB = Number(match.scoreB);
+    const A = ensurePlayerIds(match.A);
+    const B = ensurePlayerIds(match.B);
+    const system = typeof match.system === "string" ? match.system : undefined;
+    let awards = null;
+    if(match.awards && typeof match.awards === "object"){
+      awards = {};
+      Object.entries(match.awards).forEach(([pid,val])=>{
+        const id = Number(pid);
+        const num = Number(val);
+        if(playerIds.has(id) && Number.isFinite(num)){
+          awards[id] = Math.round(num * 1000) / 1000;
+        }
+      });
+      if(Object.keys(awards).length === 0) awards = null;
+    }
+    return {
+      ts: Number.isFinite(ts) ? ts : Date.now(),
+      court: Number.isFinite(court) && court >=1 && court <=4 ? court : 1,
+      winner,
+      scoreA: Number.isFinite(scoreA) ? scoreA : 0,
+      scoreB: Number.isFinite(scoreB) ? scoreB : 0,
+      A,
+      B,
+      system,
+      awards
+    };
+  }).filter(Boolean) : [];
+  normalized.matches = matches;
+
+  const limitNum = Number(raw.matchLimit);
+  normalized.matchLimit = Number.isFinite(limitNum) && limitNum > 0 ? Math.round(limitNum) : null;
+
+  const playedNum = Number(raw.matchesPlayed);
+  normalized.matchesPlayed = Number.isFinite(playedNum) && playedNum >= 0 ? Math.round(playedNum) : matches.length;
+
+  normalized.tournamentStarted = Boolean(raw.tournamentStarted);
+
+  const partnersRaw = raw.lastPartners;
+  if(partnersRaw && typeof partnersRaw === "object"){
+    Object.entries(partnersRaw).forEach(([pid,val])=>{
+      const id = Number(pid);
+      if(!playerIds.has(id)) return;
+      const partnerId = Number(val);
+      normalized.lastPartners[id] = playerIds.has(partnerId) ? partnerId : null;
+    });
+  }
+
+  return normalized;
+}
 
 function toggleHelp(){
   const content = $("helpContent");
@@ -365,11 +458,8 @@ function save(){ Storage.save(state); }
 function load(){
   const s = Storage.load();
   if(s){
-    state = s;
-    if(!Array.isArray(state.matches)) state.matches = [];
-    if(typeof state.tournamentStarted !== "boolean") state.tournamentStarted = false;
-    if(!state.lastPartners || typeof state.lastPartners !== "object") state.lastPartners = {};
-    nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
+    state = normalizeStateStructure(s);
+    nextId = (Math.max(0, ...(state.players.map(p=>Number(p.id)||0))) + 1) || 1;
   }
 }
 
@@ -1256,10 +1346,8 @@ function importState(file){
     try{
       const data = JSON.parse(e.target.result);
       if(!data || !Array.isArray(data.players)) throw new Error("Invalid file");
-      state = data;
-      if(!Array.isArray(state.matches)) state.matches = [];
-      if(typeof state.tournamentStarted !== "boolean") state.tournamentStarted = false;
-      nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
+      state = normalizeStateStructure(data);
+      nextId = (Math.max(0, ...(state.players.map(p=>Number(p.id)||0))) + 1) || 1;
       rerender();
     }catch(err){
       alert("Import failed: " + err.message);
@@ -1295,7 +1383,7 @@ document.addEventListener("click", (e)=>{
   if(t.id==="resetBtn"){
     if(confirm("Reset the entire app? This clears saved data (players, courts, league, history).")){
       Storage.clear();
-      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[],tournamentStarted:false,lastPartners:{}};
+      state = createDefaultState();
       nextId=1; rerender();
     }
   }
@@ -1334,6 +1422,14 @@ document.addEventListener("click", (e)=>{
 });
 
 document.getElementById("playerFilter").addEventListener("change", ()=>{ renderHistory(); });
+document.getElementById("importFile").addEventListener("change", (event)=>{
+  const fileInput = event.target;
+  const file = fileInput?.files?.[0];
+  if(file){
+    importState(file);
+    fileInput.value = "";
+  }
+});
 
 document.getElementById("scoringSystem").addEventListener("change", ()=>{
   const system = document.getElementById("scoringSystem").value;
