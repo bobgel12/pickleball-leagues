@@ -336,7 +336,8 @@ let state = {
   matchesPlayed: 0,
   matchLimit: null,
   matches: [],      // history: {ts, court, A:[ids], B:[ids], winner:"A"|"B", scoreA, scoreB}
-  tournamentStarted: false
+  tournamentStarted: false,
+  lastPartners: {} // { [playerId]: lastPartnerId }
 };
 let nextId = 1;
 
@@ -365,6 +366,7 @@ function load(){
     state = s;
     if(!Array.isArray(state.matches)) state.matches = [];
     if(typeof state.tournamentStarted !== "boolean") state.tournamentStarted = false;
+    if(!state.lastPartners || typeof state.lastPartners !== "object") state.lastPartners = {};
     nextId = (Math.max(0, ...(state.players.map(p=>p.id))) + 1) || 1;
   }
 }
@@ -378,6 +380,95 @@ function shuffle(arr){
     [a[i],a[j]] = [a[j],a[i]];
   }
   return a;
+}
+
+function setLastPartner(id, partnerId){
+  if(!state.lastPartners) state.lastPartners = {};
+  if(id != null) state.lastPartners[id] = partnerId ?? null;
+}
+function getLastPartner(id){
+  return state.lastPartners?.[id] ?? null;
+}
+function clearLastPartners(ids){
+  if(!state.lastPartners) state.lastPartners = {};
+  if(Array.isArray(ids)){
+    ids.forEach(id => setLastPartner(id, null));
+  }else{
+    state.lastPartners = {};
+  }
+}
+
+function permute(arr){
+  const results = [];
+  const used = new Array(arr.length).fill(false);
+  const path = [];
+  function backtrack(){
+    if(path.length === arr.length){
+      results.push(path.slice());
+      return;
+    }
+    for(let i=0;i<arr.length;i++){
+      if(used[i]) continue;
+      used[i]=true;
+      path.push(arr[i]);
+      backtrack();
+      path.pop();
+      used[i]=false;
+    }
+  }
+  backtrack();
+  return results;
+}
+
+function combinations(arr, k){
+  const results = [];
+  const combo = [];
+  function backtrack(start){
+    if(combo.length === k){
+      results.push(combo.slice());
+      return;
+    }
+    for(let i=start;i<arr.length;i++){
+      combo.push(arr[i]);
+      backtrack(i+1);
+      combo.pop();
+    }
+  }
+  backtrack(0);
+  return results;
+}
+
+function isPairValid(a, b){
+  if(a == null || b == null) return true;
+  return getLastPartner(a) !== b && getLastPartner(b) !== a;
+}
+
+function arrangeCourtTeams(courtIds){
+  if(!Array.isArray(courtIds) || courtIds.length < 4) return courtIds;
+  const poolLimit = Math.min(courtIds.length, 6);
+  const pool = courtIds.slice(0, poolLimit);
+
+  const comboOfFour = combinations(pool, 4);
+  for(const combo of comboOfFour){
+    const perms = permute(combo);
+    for(const ordering of perms){
+      if(isPairValid(ordering[0], ordering[1]) && isPairValid(ordering[2], ordering[3])){
+        const remaining = courtIds.filter(id => !ordering.includes(id));
+        return ordering.concat(remaining);
+      }
+    }
+  }
+
+  // Fallback: rotate pairs within first four to try simple swap
+  const fallback = courtIds.slice();
+  const firstFour = fallback.slice(0,4);
+  if(firstFour.length === 4){
+    if(!isPairValid(firstFour[0], firstFour[1]) || !isPairValid(firstFour[2], firstFour[3])){
+      const rotated = [firstFour[0], firstFour[2], firstFour[1], firstFour[3]].concat(fallback.slice(4));
+      return rotated;
+    }
+  }
+  return courtIds;
 }
 
 function randomName(){
@@ -711,6 +802,12 @@ function addRandomPlayer(){
 function removePlayer(id){
   state.players = state.players.filter(p=>p.id!==id);
   state.courts = state.courts.map(c=>c.filter(pid=>pid!==id));
+  if(state.lastPartners){
+    delete state.lastPartners[id];
+    Object.keys(state.lastPartners).forEach(pid=>{
+      if(state.lastPartners[pid] === id) state.lastPartners[pid] = null;
+    });
+  }
   rerender();
 }
 
@@ -779,12 +876,13 @@ function initialSeedCourts(){
     balanceTeams(c2), 
     balanceTeams(c3), 
     balanceTeams(c4)
-  ];
+  ].map(arrangeCourtTeams);
   
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
   state.tournamentStarted = true;
+  clearLastPartners();
   rerender();
 }
 
@@ -825,12 +923,13 @@ function gradualSeedCourts(){
     balanceTeams(c2), 
     balanceTeams(c3), 
     balanceTeams(c4)
-  ];
+  ].map(arrangeCourtTeams);
   
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
   state.tournamentStarted = true;
+  clearLastPartners();
   rerender();
   
   // Show info about gradual start
@@ -849,16 +948,17 @@ function classicSeedCourts(){
     else if(i<12) c2.push(p.id);
     else c1.push(p.id);
   });
-  state.courts=[shuffle(c1),shuffle(c2),shuffle(c3),shuffle(c4)];
+  state.courts=[shuffle(c1),shuffle(c2),shuffle(c3),shuffle(c4)].map(arrangeCourtTeams);
   state.matchesPlayed = 0;
   state.players.forEach(p=>p.points=0);
   state.matches = [];
   state.tournamentStarted = true;
+  clearLastPartners();
   rerender();
 }
 
 function shufflePairsSameCourt(){
-  state.courts = state.courts.map(c=>shuffle(c));
+  state.courts = state.courts.map(c=>arrangeCourtTeams(shuffle(c)));
   rerender();
 }
 
@@ -945,6 +1045,15 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
 
   const winners = (winner==="A") ? A : B;
   const losers  = (winner==="A") ? B : A;
+
+  if(winners.length === 2){
+    setLastPartner(winners[0], winners[1]);
+    setLastPartner(winners[1], winners[0]);
+  }
+  if(losers.length === 2){
+    setLastPartner(losers[0], losers[1]);
+    setLastPartner(losers[1], losers[0]);
+  }
 
   const scoringSystem = document.getElementById("scoringSystem").value;
   let winPoints, lossPoints;
@@ -1051,7 +1160,7 @@ function processRoundResults(){
     ];
   }
 
-  state.courts = nextCourts;
+  state.courts = nextCourts.map(arrangeCourtTeams);
   state.tournamentStarted = true;
 }
 
@@ -1102,13 +1211,14 @@ document.addEventListener("click", (e)=>{
       state.matchesPlayed = 0;
       state.matches = [];
       state.tournamentStarted = false;
+      clearLastPartners();
       rerender();
     }
   }
   if(t.id==="resetBtn"){
     if(confirm("Reset the entire app? This clears saved data (players, courts, league, history).")){
       Storage.clear();
-      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[],tournamentStarted:false};
+      state = {players:[],courts:[[],[],[],[]],matchesPlayed:0,matchLimit:null,matches:[],tournamentStarted:false,lastPartners:{}};
       nextId=1; rerender();
     }
   }
