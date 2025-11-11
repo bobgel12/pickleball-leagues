@@ -78,6 +78,7 @@
         <input id="rating" type="number" placeholder="DUPR rating (e.g., 4.500)" step="0.001" min="2.000" max="8.000">
         <button class="btn primary" id="addPlayerBtn">Add Player</button>
         <button class="btn" id="addRandomBtn" title="Add a random player for testing">Add Random Player</button>
+        <button class="btn" id="addRandom16Btn" title="Add sixteen random players for a full 4-court tournament">Add 16 Random</button>
       </div>
       <div class="row muted">
         <strong>DUPR Ratings:</strong> 2.000-8.000 (3 decimal places). <strong>Fair Seed Courts:</strong> Balanced teams across skill tiers. <strong>Gradual Start:</strong> Top 8 players start, others join later.
@@ -248,6 +249,7 @@
               <th>Team A</th>
               <th>Team B</th>
               <th>Score</th>
+              <th>Total</th>
               <th>Winner</th>
             </tr>
           </thead>
@@ -475,6 +477,99 @@ function randomName(){
   const first = ["Alex","Jordan","Taylor","Morgan","Casey","Riley","Cameron","Drew","Reese","Skyler","Bailey","Avery","Quinn","Rowan","Parker","Hayden","Jesse","Kendall","Logan","Peyton","Sam","Jamie","Blake","Sage","River","Phoenix","Dakota","Finley","Emery","Harper","Charlie","Sage","Indigo","Ocean","Rain","Storm","Sunny","Winter","Autumn","Spring"];
   const last = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson","Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores"];
   return first[Math.floor(Math.random()*first.length)] + " " + last[Math.floor(Math.random()*last.length)];
+}
+
+function calculateSmartBonuses({courtIndex, scoreA, scoreB, winner, A, B}){
+  const courtMultiplier = SMART_COURT_WEIGHTS[courtIndex];
+  const marginBonus = Math.abs(scoreA - scoreB) / 10;
+  const basePoints = 10;
+
+  const opponentSeeds = (winner==="A") ? B : A;
+  const playerSeeds = (winner==="A") ? A : B;
+  const avgOpponentSeed = opponentSeeds.reduce((sum, id) => {
+    const p = playerById(id);
+    return sum + (p ? p.seed : 4.500);
+  }, 0) / opponentSeeds.length;
+  const avgPlayerSeed = playerSeeds.reduce((sum, id) => {
+    const p = playerById(id);
+    return sum + (p ? p.seed : 4.500);
+  }, 0) / playerSeeds.length;
+  const strengthDiff = (avgOpponentSeed - avgPlayerSeed) / 6.000;
+  const strengthBonus = Math.max(0, strengthDiff * 3);
+
+  return {
+    courtMultiplier,
+    basePoints,
+    marginBonus,
+    strengthBonus
+  };
+}
+
+function calculateMatchAwards({system, courtIndex, winner, scoreA, scoreB, A, B}){
+  const awards = {};
+  if(!A || !B) return awards;
+  const winners = (winner==="A") ? A : B;
+  const losers  = (winner==="A") ? B : A;
+
+  let winPoints = 0;
+  let lossPoints = 0;
+  if(system === "simple"){
+    winPoints = 1;
+    lossPoints = -1;
+  }else if(system === "court"){
+    winPoints = COURT_MULTIPLIERS[courtIndex] ?? 1;
+    lossPoints = 0;
+  }else if(system === "smart"){
+    const {courtMultiplier, basePoints, marginBonus, strengthBonus} = calculateSmartBonuses({courtIndex, scoreA, scoreB, winner, A, B});
+    winPoints = Math.round((basePoints + marginBonus + strengthBonus) * courtMultiplier);
+    lossPoints = Math.round(-2 * courtMultiplier);
+  }else{
+    winPoints = 1;
+    lossPoints = -1;
+  }
+
+  winners.forEach(id=>{
+    awards[id] = (awards[id] ?? 0) + winPoints;
+  });
+  losers.forEach(id=>{
+    awards[id] = (awards[id] ?? 0) + lossPoints;
+  });
+  return awards;
+}
+
+function applyAwards(awards){
+  if(!awards) return;
+  Object.entries(awards).forEach(([idStr, delta])=>{
+    const id = Number(idStr);
+    const p = playerById(id);
+    if(!p) return;
+    const next = (p.points ?? 0) + delta;
+    p.points = Math.max(0, Math.round(next * 1000) / 1000);
+  });
+}
+
+function recalculatePointsFromMatches(){
+  state.players.forEach(p=>p.points = 0);
+  if(!Array.isArray(state.matches)) return;
+  const ordered = state.matches.slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+  ordered.forEach(match=>{
+    const system = match.system || document.getElementById("scoringSystem")?.value || "simple";
+    const courtIndex = (match.court || 1) - 1;
+    let awards = match.awards;
+    if(!awards || typeof awards !== "object"){
+      awards = calculateMatchAwards({
+        system,
+        courtIndex,
+        winner: match.winner,
+        scoreA: match.scoreA,
+        scoreB: match.scoreB,
+        A: match.A,
+        B: match.B
+      });
+      match.awards = awards;
+    }
+    applyAwards(awards);
+  });
 }
 
 /* ---------- Rendering ---------- */
@@ -739,6 +834,7 @@ function renderHistory(){
   for(const m of rows){
     const namesA = m.A.map(id => playerById(id)?.name || `#${id}`).join(", ");
     const namesB = m.B.map(id => playerById(id)?.name || `#${id}`).join(", ");
+    const totalScore = (Number(m.scoreA) || 0) + (Number(m.scoreB) || 0);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono nowrap">${fmt(m.ts)}</td>
@@ -746,6 +842,7 @@ function renderHistory(){
       <td>${namesA}</td>
       <td>${namesB}</td>
       <td class="mono">${m.scoreA}-${m.scoreB}</td>
+      <td class="mono">${totalScore}</td>
       <td>${m.winner==="A"?"Team A":"Team B"}</td>
     `;
     tbody.appendChild(tr);
@@ -753,6 +850,7 @@ function renderHistory(){
 }
 
 function rerender(){
+  recalculatePointsFromMatches();
   renderPlayers();
   renderCourts();
   renderLeagueMeta();
@@ -763,7 +861,7 @@ function rerender(){
 }
 
 /* ---------- Core ops ---------- */
-function addPlayer(name, seed){
+function addPlayer(name, seed, options={}){
   name = (name||"").trim();
   if(!name) return;
   const s = Number(seed);
@@ -771,9 +869,12 @@ function addPlayer(name, seed){
   let duprScore = Number.isFinite(s) ? Math.max(2.000, Math.min(8.000, Math.round(s * 1000) / 1000)) : 4.500;
   const p = {id: nextId++, name, seed: duprScore, points: 0};
   state.players.push(p);
-  rerender();
+  if(!options.silent){
+    rerender();
+  }
+  return p;
 }
-function addRandomPlayer(){
+function addRandomPlayer(options={}){
   const n = randomName();
   // Generate realistic DUPR score distribution
   // Most players fall in the 3.000-6.000 range with some outliers
@@ -796,7 +897,16 @@ function addRandomPlayer(){
   
   // Round to 3 decimal places
   seed = Math.round(seed * 1000) / 1000;
-  addPlayer(n, seed);
+  return addPlayer(n, seed, options);
+}
+
+function addRandomPlayers(count){
+  const total = Number(count);
+  if(!Number.isFinite(total) || total <= 0) return;
+  for(let i=0;i<total;i++){
+    addRandomPlayer({silent:true});
+  }
+  rerender();
 }
 
 function removePlayer(id){
@@ -1056,52 +1166,16 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
   }
 
   const scoringSystem = document.getElementById("scoringSystem").value;
-  let winPoints, lossPoints;
-
-  if (scoringSystem === "simple") {
-    // Simple system: Win +1, Loss -1
-    winPoints = 1;
-    lossPoints = -1;
-  } else if (scoringSystem === "court") {
-    // Court weighted system
-    const courtMultiplier = COURT_MULTIPLIERS[courtIndex];
-    winPoints = courtMultiplier;
-    lossPoints = 0;
-  } else if (scoringSystem === "smart") {
-    // Smart points system
-    const courtMultiplier = SMART_COURT_WEIGHTS[courtIndex];
-    const marginBonus = Math.abs(scoreA - scoreB) / 10;
-    const basePoints = 10;
-    
-    // Calculate opponent strength based on DUPR ratings
-    const opponentSeeds = (winner==="A") ? B : A;
-    const avgOpponentSeed = opponentSeeds.reduce((sum, id) => {
-      const p = playerById(id);
-      return sum + (p ? p.seed : 4.500); // Default DUPR 4.500
-    }, 0) / opponentSeeds.length;
-    
-    const playerSeeds = (winner==="A") ? A : B;
-    const avgPlayerSeed = playerSeeds.reduce((sum, id) => {
-      const p = playerById(id);
-      return sum + (p ? p.seed : 4.500); // Default DUPR 4.500
-    }, 0) / playerSeeds.length;
-    
-    // DUPR strength difference (normalized for 2.000-8.000 range)
-    const strengthDiff = (avgOpponentSeed - avgPlayerSeed) / 6.000; // Normalize by range
-    const strengthBonus = Math.max(0, strengthDiff * 3); // Scale bonus appropriately
-    
-    winPoints = Math.round((basePoints + marginBonus + strengthBonus) * courtMultiplier);
-    lossPoints = Math.round(-2 * courtMultiplier);
-  }
-  
-  winners.forEach(id=> { 
-    const p=playerById(id); 
-    if(p) p.points = Math.max(0, (p.points||0) + winPoints);
+  const awards = calculateMatchAwards({
+    system: scoringSystem,
+    courtIndex,
+    winner,
+    scoreA,
+    scoreB,
+    A,
+    B
   });
-  losers.forEach(id=> { 
-    const p=playerById(id); 
-    if(p) p.points = Math.max(0, (p.points||0) + lossPoints);
-  });
+  applyAwards(awards);
 
   state.matches.push({
     ts: Date.now(),
@@ -1110,7 +1184,9 @@ function applyResult(courtIndex, winner, scoreA, scoreB){
     B: B.slice(),
     winner: winner,
     scoreA: scoreA,
-    scoreB: scoreB
+    scoreB: scoreB,
+    system: scoringSystem,
+    awards
   });
 
   state.matchesPlayed += 1;
@@ -1200,6 +1276,7 @@ document.addEventListener("click", (e)=>{
     document.getElementById("name").value=""; document.getElementById("rating").value="";
   }
   if(t.id==="addRandomBtn"){ addRandomPlayer(); }
+  if(t.id==="addRandom16Btn"){ addRandomPlayers(16); }
   if(t.id==="seedBtn"){ initialSeedCourts(); }
   if(t.id==="gradualSeedBtn"){ gradualSeedCourts(); }
   if(t.id==="classicSeedBtn"){ classicSeedCourts(); }
