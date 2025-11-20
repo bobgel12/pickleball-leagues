@@ -1,0 +1,558 @@
+import React, { useEffect, useCallback } from 'react';
+import { useAppState } from './hooks/useAppState';
+import { useTournament } from './hooks/useTournament';
+import { useStorage } from './hooks/useStorage';
+import { parseScore, parseCSV } from './utils/csvParser';
+import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
+import {
+  initialSeedCourts,
+  gradualSeedCourts,
+  classicSeedCourts,
+  shufflePairsSameCourt,
+  shuffle,
+  arrangeCourtTeams
+} from './utils/seeding';
+import { generateTournamentName } from './utils/helpers';
+import { MIN_DUPR_RATING, MAX_DUPR_RATING, DEFAULT_DUPR_RATING } from './utils/constants';
+import Header from './components/Header';
+import PlayerManagement from './components/PlayerManagement';
+import PlayerList from './components/PlayerList';
+import Courts from './components/Courts';
+import Leaderboard from './components/Leaderboard';
+import Summary from './components/Summary';
+import MatchHistory from './components/MatchHistory';
+import Help from './components/Help';
+import LegalDisclaimer from './components/LegalDisclaimer';
+
+function App() {
+  const appState = useAppState();
+  const tournament = useTournament(appState);
+  const { exportState } = useStorage(appState.state);
+
+  // Recalculate points when tournament changes
+  useEffect(() => {
+    if (appState.currentTournament && appState.currentTournament.matches) {
+      recalculatePointsFromMatches(
+        appState.currentTournament,
+        tournament.getPlayerById,
+        tournament.setPlayerPoints
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState.currentTournament?.matches?.length, appState.currentTournament?.scoringSystem]);
+
+  const handleAddTournament = useCallback(() => {
+    const defaultName = generateTournamentName(appState.tournaments);
+    const providedName = window.prompt('Tournament name?', defaultName);
+    const name = (providedName && providedName.trim()) ? providedName.trim() : defaultName;
+    appState.addTournament(name);
+  }, [appState]);
+
+  const handleRemoveTournament = useCallback(() => {
+    if (appState.tournaments.length <= 1) {
+      window.alert('At least one tournament must remain.');
+      return;
+    }
+    const current = appState.currentTournament;
+    if (!current) return;
+    if (!window.confirm(`Remove "${current.name}"? This cannot be undone.`)) return;
+    appState.removeTournament(current.id);
+  }, [appState]);
+
+  const handleImport = useCallback((file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data || typeof data !== 'object') throw new Error('Invalid file');
+        appState.importState(data);
+        window.alert('Import successful!');
+      } catch (err) {
+        window.alert('Import failed: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }, [appState]);
+
+  const handleImportCSV = useCallback((file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const playerNames = parseCSV(text);
+
+        if (playerNames.length === 0) {
+          window.alert('No players found in CSV file. Please check the file format.');
+          return;
+        }
+
+        const defaultRating = window.prompt(
+          `Found ${playerNames.length} players in CSV.\n\nEnter default DUPR rating (2.000-8.000) for all players:\n(Leave empty to use 4.500)`,
+          '4.500'
+        );
+
+        let defaultSeed = DEFAULT_DUPR_RATING;
+        if (defaultRating && defaultRating.trim()) {
+          const rating = Number(defaultRating.trim());
+          if (Number.isFinite(rating)) {
+            defaultSeed = Math.max(MIN_DUPR_RATING, Math.min(MAX_DUPR_RATING, Math.round(rating * 1000) / 1000));
+          }
+        }
+
+        const existingNames = new Set(appState.currentTournament?.players.map(p => p.name.toLowerCase()) || []);
+        let added = 0;
+        let skipped = 0;
+
+        playerNames.forEach(name => {
+          if (existingNames.has(name.toLowerCase())) {
+            skipped++;
+            return;
+          }
+          tournament.addPlayer(name, defaultSeed);
+          existingNames.add(name.toLowerCase());
+          added++;
+        });
+
+        let message = `Imported ${added} player${added !== 1 ? 's' : ''} from CSV.`;
+        if (skipped > 0) {
+          message += `\nSkipped ${skipped} duplicate player${skipped !== 1 ? 's' : ''}.`;
+        }
+        window.alert(message);
+      } catch (err) {
+        window.alert('CSV import failed: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }, [appState, tournament]);
+
+  const handleFairSeed = useCallback(() => {
+    if (!appState.currentTournament) return;
+    
+    // Ensure all players have IDs before seeding
+    let maxId = 0;
+    appState.currentTournament.players.forEach(p => {
+      if (p && p.id != null && Number.isFinite(Number(p.id))) {
+        maxId = Math.max(maxId, Number(p.id));
+      }
+    });
+    
+    let nextId = maxId + 1;
+    const playersWithIds = appState.currentTournament.players.map(p => {
+      if (!p || p.id == null || !Number.isFinite(Number(p.id))) {
+        console.warn(`Assigning ID ${nextId} to player without ID:`, p);
+        return { ...p, id: nextId++ };
+      }
+      return p;
+    });
+    
+    // Create a tournament object with updated players for seeding
+    const tournamentForSeeding = {
+      ...appState.currentTournament,
+      players: playersWithIds
+    };
+    
+    // Update tournament with players that have IDs (if needed)
+    if (playersWithIds.length !== appState.currentTournament.players.length || 
+        playersWithIds.some((p, i) => p.id !== appState.currentTournament.players[i]?.id)) {
+      appState.updateTournament(appState.currentTournament.id, (t) => ({
+        ...t,
+        players: playersWithIds
+      }));
+    }
+    
+    const courts = initialSeedCourts(
+      tournamentForSeeding,
+      tournament.getPlayerById,
+      tournament.setLastPartner,
+      tournament.clearLastPartners,
+      (courtIds) => arrangeCourtTeams(courtIds, tournament.getLastPartner)
+    );
+    
+    // Final validation: ensure no duplicates in courts
+    const allCourtPlayerIds = courts.flat();
+    const uniqueIds = new Set(allCourtPlayerIds);
+    if (allCourtPlayerIds.length !== uniqueIds.size) {
+      console.error('CRITICAL: Duplicates found in seeded courts! Removing...', {
+        total: allCourtPlayerIds.length,
+        unique: uniqueIds.size
+      });
+      // Remove duplicates by keeping only first occurrence
+      const seen = new Set();
+      const cleanedCourts = courts.map(court => {
+        return court.filter(id => {
+          if (seen.has(id)) {
+            console.warn(`Removing duplicate player ${id} from court`);
+            return false;
+          }
+          seen.add(id);
+          return true;
+        });
+      });
+      tournament.setCourts(cleanedCourts);
+    } else {
+      tournament.setCourts(courts);
+    }
+    
+    appState.updateTournament(appState.currentTournament.id, (t) => ({
+      ...t,
+      matchesPlayed: 0,
+      matches: [],
+      tournamentStarted: true,
+      players: t.players.map(p => ({ ...p, points: 0 }))
+    }));
+    tournament.clearLastPartners();
+  }, [appState, tournament]);
+
+  const handleGradualSeed = useCallback(() => {
+    if (!appState.currentTournament) return;
+    const courts = gradualSeedCourts(
+      appState.currentTournament,
+      tournament.getPlayerById,
+      tournament.setLastPartner,
+      tournament.clearLastPartners,
+      (courtIds) => arrangeCourtTeams(courtIds, tournament.getLastPartner)
+    );
+    tournament.setCourts(courts);
+    appState.updateTournament(appState.currentTournament.id, (t) => ({
+      ...t,
+      matchesPlayed: 0,
+      matches: [],
+      tournamentStarted: true,
+      players: t.players.map(p => ({ ...p, points: 0 }))
+    }));
+    tournament.clearLastPartners();
+    const remaining = appState.currentTournament.players.length - 8;
+    if (remaining > 0) {
+      window.alert(`Gradual Start: Top 8 players on Courts 3-4. ${remaining} players will join as others are eliminated or after initial matches.`);
+    }
+  }, [appState, tournament]);
+
+  const handleClassicSeed = useCallback(() => {
+    if (!appState.currentTournament) return;
+    const courts = classicSeedCourts(
+      appState.currentTournament,
+      shuffle,
+      (courtIds) => arrangeCourtTeams(courtIds, tournament.getLastPartner)
+    );
+    tournament.setCourts(courts);
+    appState.updateTournament(appState.currentTournament.id, (t) => ({
+      ...t,
+      matchesPlayed: 0,
+      matches: [],
+      tournamentStarted: true,
+      players: t.players.map(p => ({ ...p, points: 0 }))
+    }));
+    tournament.clearLastPartners();
+  }, [appState, tournament]);
+
+  const handleShufflePairs = useCallback(() => {
+    if (!appState.currentTournament) return;
+    const courts = shufflePairsSameCourt(
+      appState.currentTournament,
+      shuffle,
+      (courtIds) => arrangeCourtTeams(courtIds, tournament.getLastPartner)
+    );
+    tournament.setCourts(courts);
+  }, [appState, tournament]);
+
+  const handleSubmitCourt = useCallback((courtIndex, score) => {
+    if (!appState.currentTournament) return;
+    const currentTournament = appState.currentTournament;
+    if (currentTournament.matchLimit && currentTournament.matchesPlayed >= currentTournament.matchLimit) return;
+
+    const court = currentTournament.courts[courtIndex] || [];
+    const A = court.slice(0, 2);
+    const B = court.slice(2, 4);
+
+    if (A.length < 2 || B.length < 2) {
+      window.alert(`Court ${courtIndex + 1} does not have enough players (need 4 players).`);
+      return;
+    }
+
+    // Just mark this court as submitted - don't process the match yet
+    const submittedCourts = currentTournament.submittedCourts || [];
+    if (!submittedCourts.includes(courtIndex)) {
+      appState.updateTournament(currentTournament.id, (t) => ({
+        ...t,
+        submittedCourts: [...submittedCourts, courtIndex]
+      }));
+    }
+  }, [appState]);
+
+  const handleSubmitRound = useCallback((scores) => {
+    if (!appState.currentTournament) return false;
+    const currentTournament = appState.currentTournament;
+    if (currentTournament.matchLimit && currentTournament.matchesPlayed >= currentTournament.matchLimit) return false;
+
+    // Check if all courts have been submitted
+    const submittedCourts = currentTournament.submittedCourts || [];
+    const allCourtsSubmitted = [0, 1, 2, 3].every(idx => {
+      const court = currentTournament.courts[idx] || [];
+      const A = court.slice(0, 2);
+      const B = court.slice(2, 4);
+      // If court has 4 players, it must be submitted
+      if (A.length >= 2 && B.length >= 2) {
+        return submittedCourts.includes(idx);
+      }
+      // Empty courts don't need to be submitted
+      return true;
+    });
+
+    if (!allCourtsSubmitted) {
+      const missingCourts = [0, 1, 2, 3].filter(idx => {
+        const court = currentTournament.courts[idx] || [];
+        const A = court.slice(0, 2);
+        const B = court.slice(2, 4);
+        return A.length >= 2 && B.length >= 2 && !submittedCourts.includes(idx);
+      });
+      window.alert(`Please submit scores for all courts before submitting the round.\nMissing: ${missingCourts.map(i => `Court ${i + 1}`).join(', ')}`);
+      return false; // Return false to indicate failure
+    }
+
+    const roundResults = [];
+    let hasValidScores = false;
+    let hasInvalidScores = false;
+    const errorMessages = [];
+
+    for (let courtIndex = 0; courtIndex < 4; courtIndex++) {
+      const court = currentTournament.courts[courtIndex] || [];
+      const A = court.slice(0, 2);
+      const B = court.slice(2, 4);
+
+      if (A.length < 2 || B.length < 2) continue;
+
+      const input = scores[courtIndex];
+      if (!input || !input.trim()) {
+        hasInvalidScores = true;
+        errorMessages.push(`Court ${courtIndex + 1}: No score entered`);
+        continue;
+      }
+
+      const parsed = parseScore(input);
+
+      if (!parsed) {
+        hasInvalidScores = true;
+        errorMessages.push(`Court ${courtIndex + 1}: Invalid score format`);
+        continue;
+      }
+
+      const scoreA = parsed.a;
+      const scoreB = parsed.b;
+      if (scoreA === scoreB) {
+        hasInvalidScores = true;
+        errorMessages.push(`Court ${courtIndex + 1}: Ties not supported`);
+        continue;
+      }
+
+      const winner = (scoreA > scoreB) ? 'A' : 'B';
+      roundResults.push({ courtIndex, winner, scoreA, scoreB, A, B });
+      hasValidScores = true;
+    }
+
+    if (hasInvalidScores) {
+      window.alert('Please fix these errors:\n' + errorMessages.join('\n'));
+      // Don't clear scores on error - return false to indicate failure
+      return false;
+    }
+
+    if (!hasValidScores) {
+      window.alert('No valid matches to submit. Please enter scores for courts with 4 players.');
+      // Don't clear scores on error - return false to indicate failure
+      return false;
+    }
+
+    // Process all matches
+    roundResults.forEach(result => {
+      const court = currentTournament.courts[result.courtIndex] || [];
+      const A = court.slice(0, 2);
+      const B = court.slice(2, 4);
+      const winners = (result.winner === 'A') ? A : B;
+      const losers = (result.winner === 'A') ? B : A;
+
+      if (winners.length === 2) {
+        tournament.setLastPartner(winners[0], winners[1]);
+        tournament.setLastPartner(winners[1], winners[0]);
+      }
+      if (losers.length === 2) {
+        tournament.setLastPartner(losers[0], losers[1]);
+        tournament.setLastPartner(losers[1], losers[0]);
+      }
+
+      const scoringSystem = appState.currentTournament.scoringSystem || 'simple';
+      const awards = calculateMatchAwards({
+        system: scoringSystem,
+        courtIndex: result.courtIndex,
+        winner: result.winner,
+        scoreA: result.scoreA,
+        scoreB: result.scoreB,
+        A,
+        B
+      }, tournament.getPlayerById);
+
+      // Don't apply awards directly here - recalculatePointsFromMatches will handle it
+      // This prevents double-counting since useEffect triggers recalculation after match is added
+
+      // Add match
+      tournament.addMatch({
+        ts: Date.now(),
+        court: result.courtIndex + 1,
+        A: A.slice(),
+        B: B.slice(),
+        winner: result.winner,
+        scoreA: result.scoreA,
+        scoreB: result.scoreB,
+        system: scoringSystem,
+        awards
+      });
+    });
+
+    // Process court movements
+    const incomingWinners = [[], [], [], []];
+    const incomingLosers = [[], [], [], []];
+    const stayingPlayers = currentTournament.courts.map(c => c.slice());
+    const reversedMatches = currentTournament.matches.slice().reverse();
+
+    for (let courtIndex = 0; courtIndex < 4; courtIndex++) {
+      const court = currentTournament.courts[courtIndex] || [];
+      if (court.length < 4) continue;
+
+      const recentMatch = reversedMatches.find(m => m.court === courtIndex + 1);
+      if (!recentMatch) continue;
+
+      const matchPlayers = [...recentMatch.A, ...recentMatch.B];
+      stayingPlayers[courtIndex] = stayingPlayers[courtIndex].filter(id => !matchPlayers.includes(id));
+
+      const winners = (recentMatch.winner === 'A') ? recentMatch.A.slice() : recentMatch.B.slice();
+      const losers = (recentMatch.winner === 'A') ? recentMatch.B.slice() : recentMatch.A.slice();
+
+      const upTarget = courtIndex < 3 ? courtIndex + 1 : courtIndex;
+      const downTarget = courtIndex > 0 ? courtIndex - 1 : courtIndex;
+
+      if (upTarget === courtIndex) {
+        incomingWinners[courtIndex].push(...winners);
+      } else {
+        incomingWinners[upTarget].push(...winners);
+      }
+
+      if (downTarget === courtIndex) {
+        incomingLosers[courtIndex].push(...losers);
+      } else {
+        incomingLosers[downTarget].push(...losers);
+      }
+    }
+
+    const nextCourts = [[], [], [], []];
+    for (let i = 0; i < 4; i++) {
+      nextCourts[i] = [
+        ...incomingWinners[i],
+        ...stayingPlayers[i],
+        ...incomingLosers[i]
+      ];
+    }
+
+    tournament.setCourts(
+      nextCourts.map(court => arrangeCourtTeams(court, tournament.getLastPartner))
+    );
+
+    // Only clear submitted courts and pending scores after successful processing
+    // This ensures scores persist even if there was an error earlier
+    appState.updateTournament(currentTournament.id, (t) => ({
+      ...t,
+      tournamentStarted: true,
+      submittedCourts: [],
+      pendingScores: ['', '', '', '']
+    }));
+    
+    return true; // Return true to indicate success
+  }, [appState, tournament]);
+
+  const handleAdjustSeed = useCallback((playerId, delta) => {
+    const player = tournament.getPlayerById(playerId);
+    if (player) {
+      const newSeed = Math.max(MIN_DUPR_RATING, Math.min(MAX_DUPR_RATING, player.seed + delta));
+      tournament.setPlayerSeed(playerId, Math.round(newSeed * 1000) / 1000);
+    }
+  }, [tournament]);
+
+  const handleResetLeague = useCallback(() => {
+    if (!window.confirm('Start a new league? This resets points and match count (players & seeding stay the same).')) return;
+    tournament.resetLeague();
+  }, [tournament]);
+
+  const handleResetApp = useCallback(() => {
+    if (!window.confirm('Reset the entire app? This clears saved data (players, courts, league, history).')) return;
+    appState.clearState();
+  }, [appState]);
+
+  const showLeaderboard = appState.currentTournament?.matchLimit &&
+    appState.currentTournament.matchesPlayed >= appState.currentTournament.matchLimit;
+
+  if (!appState.currentTournament) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <>
+      <Header
+        tournaments={appState.tournaments}
+        activeTournamentId={appState.activeTournamentId}
+        onTournamentChange={appState.setActiveTournament}
+        onAddTournament={handleAddTournament}
+        onRemoveTournament={handleRemoveTournament}
+      />
+      <main>
+        <PlayerManagement
+          tournament={appState.currentTournament}
+          onAddPlayer={tournament.addPlayer}
+          onAddRandomPlayer={tournament.addRandomPlayer}
+          onAddRandom16={() => {
+            for (let i = 0; i < 16; i++) {
+              tournament.addRandomPlayer();
+            }
+          }}
+          onSetMatchLimit={tournament.setMatchLimit}
+          onSetScoringSystem={tournament.setScoringSystem}
+          onFairSeed={handleFairSeed}
+          onGradualSeed={handleGradualSeed}
+          onClassicSeed={handleClassicSeed}
+          onShufflePairs={handleShufflePairs}
+          onResetLeague={handleResetLeague}
+          onResetApp={handleResetApp}
+          onExport={exportState}
+          onImport={handleImport}
+          onImportCSV={handleImportCSV}
+        />
+        <Courts
+          tournament={appState.currentTournament}
+          getPlayerById={tournament.getPlayerById}
+          onSubmitRound={handleSubmitRound}
+          onSubmitCourt={handleSubmitCourt}
+          updateTournament={appState.updateTournament}
+        />
+        <Leaderboard
+          tournament={appState.currentTournament}
+          show={showLeaderboard}
+        />
+        <Summary
+          tournament={appState.currentTournament}
+          getPlayerById={tournament.getPlayerById}
+        />
+        <Help />
+        <MatchHistory
+          tournament={appState.currentTournament}
+          getPlayerById={tournament.getPlayerById}
+          onClearHistory={tournament.clearHistory}
+        />
+        <PlayerList
+          tournament={appState.currentTournament}
+          onRemovePlayer={tournament.removePlayer}
+          onAdjustSeed={handleAdjustSeed}
+        />
+        <LegalDisclaimer />
+      </main>
+    </>
+  );
+}
+
+export default App;
+
