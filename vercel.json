@@ -3,6 +3,10 @@
   "outputDirectory": ".",
   "rewrites": [
     {
+      "source": "/app/assets/:path*",
+      "destination": "/pickleball-react/dist/assets/:path*"
+    },
+    {
       "source": "/app/:path*",
       "destination": "/pickleball-react/dist/:path*"
     },
