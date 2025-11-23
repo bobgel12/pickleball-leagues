@@ -106,27 +106,31 @@ export function useAppState() {
 
   const setActiveTournament = useCallback((tournamentId) => {
     const id = Number(tournamentId);
+    console.log('[useAppState] setActiveTournament called with:', tournamentId, 'converted to:', id);
     if (!Number.isFinite(id) || id <= 0) {
-      console.warn('Invalid tournament ID:', tournamentId);
+      console.warn('[useAppState] Invalid tournament ID:', tournamentId);
       return;
     }
     setState(prev => {
+      console.log('[useAppState] Current state - activeTournamentId:', prev.activeTournamentId, 'tournaments:', prev.tournaments.map(t => ({ id: t.id, name: t.name })));
       // Verify the tournament exists
       const tournamentExists = prev.tournaments.some(t => t.id === id);
       if (!tournamentExists) {
-        console.warn('Tournament not found:', id, 'Available tournaments:', prev.tournaments.map(t => t.id));
+        console.warn('[useAppState] Tournament not found:', id, 'Available tournaments:', prev.tournaments.map(t => ({ id: t.id, name: t.name })));
         return prev;
       }
       if (prev.activeTournamentId === id) {
         // Already active, no need to update
-        console.log('Tournament already active:', id);
+        console.log('[useAppState] Tournament already active:', id);
         return prev;
       }
-      console.log('Setting active tournament to:', id);
-      return {
+      console.log('[useAppState] Setting active tournament to:', id, 'from:', prev.activeTournamentId);
+      const newState = {
         ...prev,
         activeTournamentId: id
       };
+      console.log('[useAppState] New state will have activeTournamentId:', newState.activeTournamentId);
+      return newState;
     });
   }, []);
 
@@ -167,14 +171,15 @@ export function useAppState() {
     if (state.tournaments.length > 0) {
       const activeExists = state.tournaments.some(t => t.id === state.activeTournamentId);
       if (!activeExists && state.activeTournamentId != null) {
-        console.log('Active tournament not found, switching to first tournament');
+        console.log('[useAppState] Active tournament not found, switching to first tournament');
         setState(prev => ({
           ...prev,
           activeTournamentId: prev.tournaments[0]?.id || null
         }));
       }
     }
-  }, [state.tournaments, state.activeTournamentId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tournaments.length, state.activeTournamentId]); // Only check when tournaments count or active ID changes
 
   return {
     state,

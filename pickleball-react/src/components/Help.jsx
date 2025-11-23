@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { Keyboard } from 'lucide-react';
+import KeyboardShortcuts from './KeyboardShortcuts';
 
 export default function Help() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   return (
     <section className="card rightcol">
@@ -10,7 +13,20 @@ export default function Help() {
         onClick={() => setIsOpen(!isOpen)}
       >
         Help & Guide
-        <span style={{ fontSize: '12px', color: '#666' }}>{isOpen ? '▲' : '▼'}</span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            className="btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowShortcuts(true);
+            }}
+            style={{ padding: '4px 8px', fontSize: '12px' }}
+            title="Keyboard Shortcuts"
+          >
+            <Keyboard size={14} />
+          </button>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{isOpen ? '▲' : '▼'}</span>
+        </div>
       </h2>
       {isOpen && (
         <div className="section" id="helpContent">
@@ -76,6 +92,9 @@ export default function Help() {
             </div>
           </div>
         </div>
+      )}
+      {showShortcuts && (
+        <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />
       )}
     </section>
   );

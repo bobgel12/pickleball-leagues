@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { Download } from 'lucide-react';
+import { exportMatchHistoryToCSV } from '../utils/export';
+import EmptyState from './EmptyState';
 
 export default function MatchHistory({ tournament, getPlayerById, onClearHistory }) {
   const [filterCourt, setFilterCourt] = useState('all');
@@ -73,6 +76,14 @@ export default function MatchHistory({ tournament, getPlayerById, onClearHistory
           </select>
           <button
             className="btn"
+            onClick={() => exportMatchHistoryToCSV(tournament, getPlayerById)}
+            title="Export match history to CSV"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+          <button
+            className="btn warn"
             onClick={onClearHistory}
             title="Remove all saved history"
           >
@@ -93,7 +104,17 @@ export default function MatchHistory({ tournament, getPlayerById, onClearHistory
               </tr>
             </thead>
             <tbody>
-              {rows.map((m, idx) => {
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px' }}>
+                    <EmptyState
+                      type="matches"
+                      message={filterCourt !== 'all' || filterPlayer ? 'No matches found with current filters' : undefined}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                rows.map((m, idx) => {
                 // Normalize IDs to numbers for consistent lookup
                 const namesA = m.A.map(id => {
                   const player = getPlayerById(Number(id));
@@ -117,7 +138,7 @@ export default function MatchHistory({ tournament, getPlayerById, onClearHistory
                     <td>{m.winner === 'A' ? 'Team A' : 'Team B'}</td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

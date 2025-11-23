@@ -122,11 +122,14 @@ export function useTournament(appState) {
   }, [currentTournament, updateTournament]);
 
   const addMatch = useCallback((match) => {
-    updateTournament(currentTournament.id, (tournament) => ({
-      ...tournament,
-      matches: [...tournament.matches, match],
-      matchesPlayed: tournament.matches.length + 1
-    }));
+    updateTournament(currentTournament.id, (tournament) => {
+      const newMatches = [...tournament.matches, match];
+      return {
+        ...tournament,
+        matches: newMatches,
+        matchesPlayed: newMatches.length
+      };
+    });
   }, [currentTournament, updateTournament]);
 
   const setLastPartner = useCallback((playerId, partnerId) => {
@@ -179,7 +182,8 @@ export function useTournament(appState) {
   const clearHistory = useCallback(() => {
     updateTournament(currentTournament.id, (tournament) => ({
       ...tournament,
-      matches: []
+      matches: [],
+      matchesPlayed: 0
     }));
   }, [currentTournament, updateTournament]);
 

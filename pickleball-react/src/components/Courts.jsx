@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { parseScore } from '../utils/csvParser.js';
+import { CheckCircle2, Edit, Send, Trophy, Award } from 'lucide-react';
 
-export default function Courts({ tournament, getPlayerById, onSubmitRound, onSubmitCourt, updateTournament }) {
+export default function Courts({ tournament, getPlayerById, onSubmitRound, onSubmitCourt, updateTournament, toast }) {
   // Initialize scores from tournament state (persisted scores) or empty array
   const [scores, setScores] = useState(() => {
     return tournament.pendingScores || ['', '', '', ''];
@@ -29,25 +30,26 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
   const handleSubmitCourt = (courtIndex) => {
     const score = scores[courtIndex];
     if (!score || !score.trim()) {
-      window.alert(`Please enter a score for Court ${courtIndex + 1}`);
+      if (toast) toast.warning(`Please enter a score for Court ${courtIndex + 1}`);
       return;
     }
 
     // Validate score format
     const parsed = parseScore(score);
     if (!parsed) {
-      window.alert(`Court ${courtIndex + 1}: Invalid score format. Please use format like "11-7".`);
+      if (toast) toast.error(`Court ${courtIndex + 1}: Invalid score format. Please use format like "11-7".`);
       return;
     }
 
     if (parsed.a === parsed.b) {
-      window.alert(`Court ${courtIndex + 1}: Ties are not supported.`);
+      if (toast) toast.error(`Court ${courtIndex + 1}: Ties are not supported.`);
       return;
     }
 
     // Mark this court as submitted (just save the score, don't process yet)
     if (onSubmitCourt) {
       onSubmitCourt(courtIndex, score);
+      if (toast) toast.success(`Court ${courtIndex + 1} submitted`);
     }
   };
 
@@ -106,7 +108,9 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
             {slotHTML(A[0])}
             {slotHTML(A[1])}
           </div>
-          <div className="vs">VS</div>
+          <div className="vs">
+            <span style={{ fontSize: '18px', fontWeight: 700 }}>VS</span>
+          </div>
           <div className="team">
             {slotHTML(B[0])}
             {slotHTML(B[1])}
@@ -139,12 +143,16 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
                 opacity: hasScore ? 1 : 0.5
               }}
             >
+              <Send size={14} />
               Submit Court {courtIndex + 1}
             </button>
           )}
           {isSubmitted && (
             <>
-              <span className="muted" style={{ fontSize: '12px', color: '#4CAF50' }}>✓ Submitted</span>
+              <span className="muted" style={{ fontSize: '12px', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle2 size={14} />
+                Submitted
+              </span>
               <button
                 className="btn"
                 onClick={() => handleEditCourt(courtIndex)}
@@ -156,6 +164,7 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
                 }}
                 title="Edit score"
               >
+                <Edit size={14} />
                 Edit
               </button>
             </>
@@ -192,7 +201,15 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
       <div className="courts" id="courts">
         {tournament.courts.map((court, idx) => {
           const courtNo = idx + 1;
-          const title = `Court ${courtNo} ${courtNo === 4 ? '(Highest)' : courtNo === 1 ? '(Lowest)' : ''}`;
+          const courtLabels = {
+            1: { label: 'Lowest', icon: Award, color: 'var(--text-secondary)' },
+            2: { label: '', icon: Award, color: 'var(--text-secondary)' },
+            3: { label: '', icon: Award, color: 'var(--text-secondary)' },
+            4: { label: 'Highest', icon: Trophy, color: 'var(--warning)' }
+          };
+          const courtInfo = courtLabels[courtNo] || { label: '', icon: Award, color: 'var(--text-secondary)' };
+          const Icon = courtInfo.icon;
+          const title = `Court ${courtNo} ${courtInfo.label ? `(${courtInfo.label})` : ''}`;
           // Normalize IDs to numbers for consistent lookup
           const players = court.map(id => getPlayerById(Number(id))).filter(Boolean);
           const A = players.slice(0, 2);
@@ -201,7 +218,10 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
           return (
             <div key={idx} className="court">
               <header>
-                <strong>{title}</strong>
+                <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Icon size={18} style={{ color: courtInfo.color }} />
+                  {title}
+                </strong>
                 <span className="muted">On court: {court.length}</span>
               </header>
               <div className="body">
@@ -213,7 +233,7 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
       </div>
       <div className="section">
         <div className="row" style={{ justifyContent: 'center', marginTop: '15px' }}>
-          <button
+            <button
             className="btn primary"
             onClick={handleSubmit}
             disabled={!canSubmitRound}
@@ -223,6 +243,7 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
               opacity: canSubmitRound ? 1 : 0.5
             }}
           >
+            <Send size={18} />
             Submit Round
           </button>
         </div>

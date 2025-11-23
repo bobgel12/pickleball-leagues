@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { UserPlus, Users, Dice1, Target, Shuffle, RotateCcw, RefreshCw, Download, Upload, FileSpreadsheet, Trophy, TrendingUp } from 'lucide-react';
 
 export default function PlayerManagement({
   tournament,
@@ -72,12 +73,16 @@ export default function PlayerManagement({
             onChange={(e) => setPlayerRating(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleAddPlayer()}
           />
-          <button className="btn primary" onClick={handleAddPlayer}>Add Player</button>
+          <button className="btn primary" onClick={handleAddPlayer}>
+            <UserPlus size={16} />
+            Add Player
+          </button>
           <button
             className="btn"
             onClick={onAddRandomPlayer}
             title="Add a random player for testing"
           >
+            <Dice1 size={16} />
             Add Random Player
           </button>
           <button
@@ -85,6 +90,7 @@ export default function PlayerManagement({
             onClick={handleAddRandom16}
             title="Add sixteen random players for a full 4-court tournament"
           >
+            <Users size={16} />
             Add 16 Random
           </button>
         </div>
@@ -131,6 +137,7 @@ export default function PlayerManagement({
             onClick={onFairSeed}
             title="Balanced teams across skill tiers. Best for 8-16 players with mixed skill levels. Prevents unfair advantages while maintaining competitive balance."
           >
+            <Target size={16} />
             Fair Seed Courts
           </button>
           <button
@@ -138,6 +145,7 @@ export default function PlayerManagement({
             onClick={onGradualSeed}
             title="Start with top 8 players on highest courts, others join as players are eliminated. Best for 16+ players or when you want to avoid overwhelming the system initially."
           >
+            <TrendingUp size={16} />
             Gradual Start
           </button>
           <button
@@ -145,6 +153,7 @@ export default function PlayerManagement({
             onClick={onClassicSeed}
             title="Original seeding: Top 4 on Court 4, next 4 on Court 3, etc. Simple but may create unfair advantages with new scoring systems."
           >
+            <Trophy size={16} />
             Classic Seed
           </button>
           <button
@@ -152,12 +161,25 @@ export default function PlayerManagement({
             onClick={onShufflePairs}
             title="Randomize team pairings within each court while keeping court assignments. Good for mixing up established partnerships."
           >
+            <Shuffle size={16} />
             Shuffle Pairs
           </button>
-          <button className="btn" onClick={onResetLeague}>New League (reset points & matches)</button>
-          <button className="btn warn" onClick={onResetApp} title="Clear all saved data">Reset App</button>
-          <button className="btn" onClick={onExport}>Export</button>
-          <label className="btn" htmlFor="importFile">Import</label>
+          <button className="btn" onClick={onResetLeague}>
+            <RotateCcw size={16} />
+            New League (reset points & matches)
+          </button>
+          <button className="btn warn" onClick={onResetApp} title="Clear all saved data">
+            <RefreshCw size={16} />
+            Reset App
+          </button>
+          <button className="btn" onClick={onExport}>
+            <Download size={16} />
+            Export
+          </button>
+          <label className="btn" htmlFor="importFile">
+            <Upload size={16} />
+            Import
+          </label>
           <input
             id="importFile"
             type="file"
@@ -169,7 +191,10 @@ export default function PlayerManagement({
               e.target.value = '';
             }}
           />
-          <label className="btn" htmlFor="importCsvFile">Import CSV</label>
+          <label className="btn" htmlFor="importCsvFile">
+            <FileSpreadsheet size={16} />
+            Import CSV
+          </label>
           <input
             id="importCsvFile"
             type="file"

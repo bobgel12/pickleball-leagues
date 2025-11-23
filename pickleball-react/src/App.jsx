@@ -2,6 +2,11 @@ import React, { useEffect, useCallback } from 'react';
 import { useAppState } from './hooks/useAppState';
 import { useTournament } from './hooks/useTournament';
 import { useStorage } from './hooks/useStorage';
+import { useToast } from './hooks/useToast';
+import { useTheme } from './hooks/useTheme';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useConfirmDialog } from './hooks/useConfirmDialog';
+import ConfirmDialog from './components/ConfirmDialog';
 import { parseScore, parseCSV } from './utils/csvParser';
 import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
 import {
@@ -21,13 +26,42 @@ import Courts from './components/Courts';
 import Leaderboard from './components/Leaderboard';
 import Summary from './components/Summary';
 import MatchHistory from './components/MatchHistory';
+import Statistics from './components/Statistics';
 import Help from './components/Help';
 import LegalDisclaimer from './components/LegalDisclaimer';
+import ToastContainer from './components/ToastContainer';
 
 function App() {
   const appState = useAppState();
   const tournament = useTournament(appState);
   const { exportState } = useStorage(appState.state);
+  const toast = useToast();
+  const { theme, toggleTheme } = useTheme();
+  const confirmDialog = useConfirmDialog();
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    'Escape': () => {
+      // Close any open modals - handled by individual components
+    },
+    'Enter': () => {
+      // Submit round if all courts are ready
+      if (appState.currentTournament) {
+        const allCourtsSubmitted = [0, 1, 2, 3].every(idx => {
+          const court = appState.currentTournament.courts[idx] || [];
+          const A = court.slice(0, 2);
+          const B = court.slice(2, 4);
+          if (A.length >= 2 && B.length >= 2) {
+            return (appState.currentTournament.submittedCourts || []).includes(idx);
+          }
+          return true;
+        });
+        if (allCourtsSubmitted && appState.currentTournament.pendingScores) {
+          handleSubmitRound(appState.currentTournament.pendingScores);
+        }
+      }
+    },
+  });
 
   // Recalculate points when tournament changes
   useEffect(() => {
@@ -46,18 +80,28 @@ function App() {
     const providedName = window.prompt('Tournament name?', defaultName);
     const name = (providedName && providedName.trim()) ? providedName.trim() : defaultName;
     appState.addTournament(name);
-  }, [appState]);
+    toast.success(`Tournament "${name}" created`);
+  }, [appState, toast]);
 
-  const handleRemoveTournament = useCallback(() => {
+  const handleRemoveTournament = useCallback(async () => {
     if (appState.tournaments.length <= 1) {
-      window.alert('At least one tournament must remain.');
+      toast.warning('At least one tournament must remain.');
       return;
     }
     const current = appState.currentTournament;
     if (!current) return;
-    if (!window.confirm(`Remove "${current.name}"? This cannot be undone.`)) return;
-    appState.removeTournament(current.id);
-  }, [appState]);
+    const confirmed = await confirmDialog.showConfirm({
+      title: 'Remove Tournament',
+      message: `Remove "${current.name}"? This cannot be undone.`,
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    if (confirmed) {
+      appState.removeTournament(current.id);
+      toast.info(`Tournament "${current.name}" removed`);
+    }
+  }, [appState, toast, confirmDialog]);
 
   const handleImport = useCallback((file) => {
     const reader = new FileReader();
@@ -66,13 +110,13 @@ function App() {
         const data = JSON.parse(e.target.result);
         if (!data || typeof data !== 'object') throw new Error('Invalid file');
         appState.importState(data);
-        window.alert('Import successful!');
+        toast.success('Import successful!', { title: 'Data Imported' });
       } catch (err) {
-        window.alert('Import failed: ' + err.message);
+        toast.error('Import failed: ' + err.message, { title: 'Import Error' });
       }
     };
     reader.readAsText(file);
-  }, [appState]);
+  }, [appState, toast]);
 
   const handleImportCSV = useCallback((file) => {
     const reader = new FileReader();
@@ -82,7 +126,7 @@ function App() {
         const playerNames = parseCSV(text);
 
         if (playerNames.length === 0) {
-          window.alert('No players found in CSV file. Please check the file format.');
+          toast.error('No players found in CSV file. Please check the file format.');
           return;
         }
 
@@ -113,13 +157,16 @@ function App() {
           added++;
         });
 
-        let message = `Imported ${added} player${added !== 1 ? 's' : ''} from CSV.`;
-        if (skipped > 0) {
-          message += `\nSkipped ${skipped} duplicate player${skipped !== 1 ? 's' : ''}.`;
+        if (added > 0) {
+          toast.success(
+            `Imported ${added} player${added !== 1 ? 's' : ''}${skipped > 0 ? ` (${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped)` : ''}`,
+            { title: 'CSV Import' }
+          );
+        } else {
+          toast.warning('All players from CSV already exist.');
         }
-        window.alert(message);
       } catch (err) {
-        window.alert('CSV import failed: ' + err.message);
+        toast.error('CSV import failed: ' + err.message, { title: 'Import Error' });
       }
     };
     reader.readAsText(file);
@@ -223,7 +270,7 @@ function App() {
     tournament.clearLastPartners();
     const remaining = appState.currentTournament.players.length - 8;
     if (remaining > 0) {
-      window.alert(`Gradual Start: Top 8 players on Courts 3-4. ${remaining} players will join as others are eliminated or after initial matches.`);
+      toast.info(`Gradual Start: Top 8 players on Courts 3-4. ${remaining} players will join as others are eliminated or after initial matches.`, { duration: 8000 });
     }
   }, [appState, tournament]);
 
@@ -265,7 +312,7 @@ function App() {
     const B = court.slice(2, 4);
 
     if (A.length < 2 || B.length < 2) {
-      window.alert(`Court ${courtIndex + 1} does not have enough players (need 4 players).`);
+      toast.warning(`Court ${courtIndex + 1} does not have enough players (need 4 players).`);
       return;
     }
 
@@ -305,7 +352,7 @@ function App() {
         const B = court.slice(2, 4);
         return A.length >= 2 && B.length >= 2 && !submittedCourts.includes(idx);
       });
-      window.alert(`Please submit scores for all courts before submitting the round.\nMissing: ${missingCourts.map(i => `Court ${i + 1}`).join(', ')}`);
+      toast.warning(`Please submit scores for all courts before submitting the round. Missing: ${missingCourts.map(i => `Court ${i + 1}`).join(', ')}`);
       return false; // Return false to indicate failure
     }
 
@@ -350,13 +397,13 @@ function App() {
     }
 
     if (hasInvalidScores) {
-      window.alert('Please fix these errors:\n' + errorMessages.join('\n'));
+      toast.error('Please fix these errors:\n' + errorMessages.join('\n'), { title: 'Validation Error', duration: 7000 });
       // Don't clear scores on error - return false to indicate failure
       return false;
     }
 
     if (!hasValidScores) {
-      window.alert('No valid matches to submit. Please enter scores for courts with 4 players.');
+      toast.warning('No valid matches to submit. Please enter scores for courts with 4 players.');
       // Don't clear scores on error - return false to indicate failure
       return false;
     }
@@ -463,8 +510,9 @@ function App() {
       pendingScores: ['', '', '', '']
     }));
     
+    toast.success('Round submitted successfully!', { title: 'Round Complete' });
     return true; // Return true to indicate success
-  }, [appState, tournament]);
+  }, [appState, tournament, toast]);
 
   const handleAdjustSeed = useCallback((playerId, delta) => {
     const player = tournament.getPlayerById(playerId);
@@ -474,15 +522,33 @@ function App() {
     }
   }, [tournament]);
 
-  const handleResetLeague = useCallback(() => {
-    if (!window.confirm('Start a new league? This resets points and match count (players & seeding stay the same).')) return;
-    tournament.resetLeague();
-  }, [tournament]);
+  const handleResetLeague = useCallback(async () => {
+    const confirmed = await confirmDialog.showConfirm({
+      title: 'Reset League',
+      message: 'Start a new league? This resets points and match count (players & seeding stay the same).',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+      variant: 'warning'
+    });
+    if (confirmed) {
+      tournament.resetLeague();
+      toast.success('League reset successfully');
+    }
+  }, [tournament, confirmDialog, toast]);
 
-  const handleResetApp = useCallback(() => {
-    if (!window.confirm('Reset the entire app? This clears saved data (players, courts, league, history).')) return;
-    appState.clearState();
-  }, [appState]);
+  const handleResetApp = useCallback(async () => {
+    const confirmed = await confirmDialog.showConfirm({
+      title: 'Reset App',
+      message: 'Reset the entire app? This clears saved data (players, courts, league, history).',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    if (confirmed) {
+      appState.clearState();
+      toast.success('App reset successfully');
+    }
+  }, [appState, confirmDialog, toast]);
 
   const showLeaderboard = appState.currentTournament?.matchLimit &&
     appState.currentTournament.matchesPlayed >= appState.currentTournament.matchLimit;
@@ -499,6 +565,19 @@ function App() {
         onTournamentChange={appState.setActiveTournament}
         onAddTournament={handleAddTournament}
         onRemoveTournament={handleRemoveTournament}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+      <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
+      <ConfirmDialog
+        isOpen={confirmDialog.dialog.isOpen}
+        title={confirmDialog.dialog.title}
+        message={confirmDialog.dialog.message}
+        confirmText={confirmDialog.dialog.confirmText}
+        cancelText={confirmDialog.dialog.cancelText}
+        variant={confirmDialog.dialog.variant}
+        onConfirm={confirmDialog.dialog.onConfirm}
+        onCancel={confirmDialog.dialog.onCancel}
       />
       <main>
         <PlayerManagement
@@ -528,12 +607,18 @@ function App() {
           onSubmitRound={handleSubmitRound}
           onSubmitCourt={handleSubmitCourt}
           updateTournament={appState.updateTournament}
+          toast={toast}
         />
         <Leaderboard
           tournament={appState.currentTournament}
           show={showLeaderboard}
+          getPlayerById={tournament.getPlayerById}
         />
         <Summary
+          tournament={appState.currentTournament}
+          getPlayerById={tournament.getPlayerById}
+        />
+        <Statistics
           tournament={appState.currentTournament}
           getPlayerById={tournament.getPlayerById}
         />
@@ -547,6 +632,7 @@ function App() {
           tournament={appState.currentTournament}
           onRemovePlayer={tournament.removePlayer}
           onAdjustSeed={handleAdjustSeed}
+          getPlayerById={tournament.getPlayerById}
         />
         <LegalDisclaimer />
       </main>
