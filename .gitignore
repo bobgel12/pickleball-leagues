@@ -3,3 +3,7 @@ node_modules/
 pickleball-react/node_modules/
 *.log
 .DS_Store
+
+# Playwright
+pickleball-react/playwright-report/
+pickleball-react/test-results/

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useAppState } from './hooks/useAppState';
 import { useTournament } from './hooks/useTournament';
 import { useStorage } from './hooks/useStorage';
@@ -6,6 +6,8 @@ import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
+import { useLeagueState } from './hooks/useLeagueState';
+import { useEventDay } from './hooks/useEventDay';
 import ConfirmDialog from './components/ConfirmDialog';
 import { parseScore, parseCSV } from './utils/csvParser';
 import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
@@ -31,6 +33,19 @@ import Help from './components/Help';
 import LegalDisclaimer from './components/LegalDisclaimer';
 import ToastContainer from './components/ToastContainer';
 
+// League Components
+import {
+  LeagueDashboard,
+  LeagueSetup,
+  EventDayManager,
+  LeagueStandings,
+  PlayerLeagueProfile,
+  LeagueHelp
+} from './components/league';
+
+// Styles
+import './styles/League.css';
+
 function App() {
   const appState = useAppState();
   const tournament = useTournament(appState);
@@ -39,14 +54,31 @@ function App() {
   const { theme, toggleTheme } = useTheme();
   const confirmDialog = useConfirmDialog();
 
+  // Section state: 'tournaments' or 'league'
+  const [activeSection, setActiveSection] = useState('tournaments');
+
+  // League state
+  const leagueState = useLeagueState();
+  const eventDay = useEventDay(
+    leagueState.league,
+    leagueState.updateEventDay,
+    leagueState.updatePlayerStats,
+    leagueState.completeEventDay,
+    leagueState.getPlayerById
+  );
+
+  // League navigation
+  const [leagueView, setLeagueView] = useState('dashboard');
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     'Escape': () => {
-      // Close any open modals - handled by individual components
+      setSelectedPlayer(null);
     },
     'Enter': () => {
-      // Submit round if all courts are ready
-      if (appState.currentTournament) {
+      // Submit round if all courts are ready (only in tournaments mode)
+      if (activeSection === 'tournaments' && appState.currentTournament) {
         const allCourtsSubmitted = [0, 1, 2, 3].every(idx => {
           const court = appState.currentTournament.courts[idx] || [];
           const A = court.slice(0, 2);
@@ -550,12 +582,95 @@ function App() {
     }
   }, [appState, confirmDialog, toast]);
 
+  // League handlers
+  const handleLeagueNavigate = useCallback((view) => {
+    setLeagueView(view);
+  }, []);
+
+  const handleStartEventDay = useCallback(() => {
+    const newDay = leagueState.startEventDay();
+    if (newDay) {
+      toast.success(`Event Day ${newDay.dayNumber} started!`);
+      setLeagueView('eventDay');
+    }
+  }, [leagueState, toast]);
+
   const showLeaderboard = appState.currentTournament?.matchLimit &&
     appState.currentTournament.matchesPlayed >= appState.currentTournament.matchLimit;
 
   if (!appState.currentTournament) {
     return <div>Loading...</div>;
   }
+
+  // Render League Section
+  const renderLeagueSection = () => {
+    switch (leagueView) {
+      case 'setup':
+        return (
+          <LeagueSetup
+            league={leagueState.league}
+            canRegisterPlayers={leagueState.canRegisterPlayers}
+            onUpdateConfig={leagueState.updateLeagueConfig}
+            onRegisterPlayer={leagueState.registerPlayer}
+            onRegisterPlayers={leagueState.registerPlayers}
+            onRemovePlayer={leagueState.removePlayer}
+            onSetStatus={leagueState.setLeagueStatus}
+            onImportLeague={leagueState.importLeague}
+            onResetLeague={leagueState.resetLeague}
+            onNavigate={handleLeagueNavigate}
+            toast={toast}
+          />
+        );
+      case 'eventDay':
+        return (
+          <EventDayManager
+            league={leagueState.league}
+            currentEventDay={eventDay.currentEventDay}
+            scheduleProgress={eventDay.scheduleProgress}
+            allMatchesCompleted={eventDay.allMatchesCompleted}
+            availableForCheckIn={eventDay.availableForCheckIn}
+            checkedInPlayersDetails={eventDay.checkedInPlayersDetails}
+            courtAssignmentsWithDetails={eventDay.courtAssignmentsWithDetails}
+            onCheckIn={eventDay.checkInPlayer}
+            onRemoveCheckIn={eventDay.removeCheckIn}
+            onCloseCheckIn={eventDay.closeCheckInAndGenerateCourts}
+            onRecordScore={eventDay.recordMatchScore}
+            onClearScore={eventDay.clearMatchScore}
+            onCloseEventDay={eventDay.closeEventDay}
+            getLadderMovementPreview={eventDay.getLadderMovementPreview}
+            getMatchesByCourt={eventDay.getMatchesByCourt}
+            getPlayerById={leagueState.getPlayerById}
+            onNavigate={handleLeagueNavigate}
+            toast={toast}
+          />
+        );
+      case 'standings':
+        return (
+          <LeagueStandings
+            league={leagueState.league}
+            standings={leagueState.standings}
+            pointsLeader={leagueState.pointsLeader}
+            winPercentageLeader={leagueState.winPercentageLeader}
+            onPlayerClick={(player) => setSelectedPlayer(player)}
+            onNavigate={handleLeagueNavigate}
+          />
+        );
+      case 'dashboard':
+      default:
+        return (
+          <LeagueDashboard
+            league={leagueState.league}
+            currentEventDay={eventDay.currentEventDay}
+            standings={leagueState.standings}
+            pointsLeader={leagueState.pointsLeader}
+            winPercentageLeader={leagueState.winPercentageLeader}
+            onStartEventDay={handleStartEventDay}
+            onNavigate={handleLeagueNavigate}
+            onExport={leagueState.exportLeague}
+          />
+        );
+    }
+  };
 
   return (
     <>
@@ -567,6 +682,8 @@ function App() {
         onRemoveTournament={handleRemoveTournament}
         theme={theme}
         onToggleTheme={toggleTheme}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <ConfirmDialog
@@ -579,66 +696,87 @@ function App() {
         onConfirm={confirmDialog.dialog.onConfirm}
         onCancel={confirmDialog.dialog.onCancel}
       />
-      <main>
-        <PlayerManagement
-          tournament={appState.currentTournament}
-          onAddPlayer={tournament.addPlayer}
-          onAddRandomPlayer={tournament.addRandomPlayer}
-          onAddRandom16={() => {
-            for (let i = 0; i < 16; i++) {
-              tournament.addRandomPlayer();
-            }
-          }}
-          onSetMatchLimit={tournament.setMatchLimit}
-          onSetScoringSystem={tournament.setScoringSystem}
-          onFairSeed={handleFairSeed}
-          onGradualSeed={handleGradualSeed}
-          onClassicSeed={handleClassicSeed}
-          onShufflePairs={handleShufflePairs}
-          onResetLeague={handleResetLeague}
-          onResetApp={handleResetApp}
-          onExport={exportState}
-          onImport={handleImport}
-          onImportCSV={handleImportCSV}
+
+      {/* Tournament Section */}
+      {activeSection === 'tournaments' && (
+        <main>
+          <PlayerManagement
+            tournament={appState.currentTournament}
+            onAddPlayer={tournament.addPlayer}
+            onAddRandomPlayer={tournament.addRandomPlayer}
+            onAddRandom16={() => {
+              for (let i = 0; i < 16; i++) {
+                tournament.addRandomPlayer();
+              }
+            }}
+            onSetMatchLimit={tournament.setMatchLimit}
+            onSetScoringSystem={tournament.setScoringSystem}
+            onFairSeed={handleFairSeed}
+            onGradualSeed={handleGradualSeed}
+            onClassicSeed={handleClassicSeed}
+            onShufflePairs={handleShufflePairs}
+            onResetLeague={handleResetLeague}
+            onResetApp={handleResetApp}
+            onExport={exportState}
+            onImport={handleImport}
+            onImportCSV={handleImportCSV}
+          />
+          <Courts
+            tournament={appState.currentTournament}
+            getPlayerById={tournament.getPlayerById}
+            onSubmitRound={handleSubmitRound}
+            onSubmitCourt={handleSubmitCourt}
+            updateTournament={appState.updateTournament}
+            toast={toast}
+          />
+          <Leaderboard
+            tournament={appState.currentTournament}
+            show={showLeaderboard}
+            getPlayerById={tournament.getPlayerById}
+          />
+          <Summary
+            tournament={appState.currentTournament}
+            getPlayerById={tournament.getPlayerById}
+          />
+          <Statistics
+            tournament={appState.currentTournament}
+            getPlayerById={tournament.getPlayerById}
+          />
+          <Help />
+          <MatchHistory
+            tournament={appState.currentTournament}
+            getPlayerById={tournament.getPlayerById}
+            onClearHistory={tournament.clearHistory}
+          />
+          <PlayerList
+            tournament={appState.currentTournament}
+            onRemovePlayer={tournament.removePlayer}
+            onAdjustSeed={handleAdjustSeed}
+            getPlayerById={tournament.getPlayerById}
+          />
+          <LegalDisclaimer />
+        </main>
+      )}
+
+      {/* League Section */}
+      {activeSection === 'league' && (
+        <main className="league-main">
+          {renderLeagueSection()}
+          <LeagueHelp league={leagueState.league} />
+          <LegalDisclaimer />
+        </main>
+      )}
+
+      {/* Player Profile Modal */}
+      {selectedPlayer && (
+        <PlayerLeagueProfile
+          player={selectedPlayer}
+          league={leagueState.league}
+          onClose={() => setSelectedPlayer(null)}
         />
-        <Courts
-          tournament={appState.currentTournament}
-          getPlayerById={tournament.getPlayerById}
-          onSubmitRound={handleSubmitRound}
-          onSubmitCourt={handleSubmitCourt}
-          updateTournament={appState.updateTournament}
-          toast={toast}
-        />
-        <Leaderboard
-          tournament={appState.currentTournament}
-          show={showLeaderboard}
-          getPlayerById={tournament.getPlayerById}
-        />
-        <Summary
-          tournament={appState.currentTournament}
-          getPlayerById={tournament.getPlayerById}
-        />
-        <Statistics
-          tournament={appState.currentTournament}
-          getPlayerById={tournament.getPlayerById}
-        />
-        <Help />
-        <MatchHistory
-          tournament={appState.currentTournament}
-          getPlayerById={tournament.getPlayerById}
-          onClearHistory={tournament.clearHistory}
-        />
-        <PlayerList
-          tournament={appState.currentTournament}
-          onRemovePlayer={tournament.removePlayer}
-          onAdjustSeed={handleAdjustSeed}
-          getPlayerById={tournament.getPlayerById}
-        />
-        <LegalDisclaimer />
-      </main>
+      )}
     </>
   );
 }
 
 export default App;
-

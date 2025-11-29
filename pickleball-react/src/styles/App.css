@@ -194,6 +194,14 @@ main {
   padding: var(--pad);
 }
 
+/* League section uses full-width layout */
+main.league-main {
+  display: block;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--pad);
+}
+
 @media (max-width: 1000px) {
   main {
     grid-template-columns: 1fr;

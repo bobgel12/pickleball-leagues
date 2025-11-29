@@ -1,7 +1,17 @@
 import React from 'react';
-import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users } from 'lucide-react';
 
-export default function Header({ tournaments, activeTournamentId, onTournamentChange, onAddTournament, onRemoveTournament, theme, onToggleTheme }) {
+export default function Header({ 
+  tournaments, 
+  activeTournamentId, 
+  onTournamentChange, 
+  onAddTournament, 
+  onRemoveTournament, 
+  theme, 
+  onToggleTheme,
+  activeSection,
+  onSectionChange 
+}) {
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
   
   // Ensure we have a valid activeTournamentId value for the select
@@ -22,36 +32,75 @@ export default function Header({ tournaments, activeTournamentId, onTournamentCh
     <header>
       <h1>
         Pickleball League
-        {currentTournament && <span id="tournamentNameDisplay">— {currentTournament.name}</span>}
+        {activeSection === 'tournaments' && currentTournament && (
+          <span id="tournamentNameDisplay">— {currentTournament.name}</span>
+        )}
+        {activeSection === 'league' && (
+          <span id="tournamentNameDisplay">— Ladder League</span>
+        )}
       </h1>
-      <div className="tournament-controls">
-        <label htmlFor="tournamentSelect">Tournament</label>
-        <select
-          id="tournamentSelect"
-          value={selectValue}
-          onChange={handleTournamentChange}
-        >
-          {tournaments.map(t => (
-            <option key={t.id} value={String(t.id)}>{t.name}</option>
-          ))}
-        </select>
-        <button className="btn" onClick={onAddTournament} type="button">
-          <Plus size={16} />
-          Add Tournament
-        </button>
-        <button
-          className="btn warn"
-          onClick={onRemoveTournament}
-          type="button"
-          disabled={tournaments.length <= 1}
-        >
-          <Trash2 size={16} />
-          Remove
-        </button>
-        <button className="btn" onClick={onToggleTheme} type="button" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
-          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-        </button>
-      </div>
+
+      {/* Section Tabs */}
+      {onSectionChange && (
+        <div className="section-tabs" style={{ margin: '12px 0' }}>
+          <button
+            className={`section-tab ${activeSection === 'tournaments' ? 'active' : ''}`}
+            onClick={() => onSectionChange('tournaments')}
+          >
+            <Trophy size={16} />
+            Tournaments
+          </button>
+          <button
+            className={`section-tab ${activeSection === 'league' ? 'active' : ''}`}
+            onClick={() => onSectionChange('league')}
+          >
+            <Users size={16} />
+            Ladder League
+          </button>
+        </div>
+      )}
+
+      {/* Tournament Controls (only show when in tournaments section) */}
+      {activeSection === 'tournaments' && (
+        <div className="tournament-controls">
+          <label htmlFor="tournamentSelect">Tournament</label>
+          <select
+            id="tournamentSelect"
+            value={selectValue}
+            onChange={handleTournamentChange}
+          >
+            {tournaments.map(t => (
+              <option key={t.id} value={String(t.id)}>{t.name}</option>
+            ))}
+          </select>
+          <button className="btn" onClick={onAddTournament} type="button">
+            <Plus size={16} />
+            Add Tournament
+          </button>
+          <button
+            className="btn warn"
+            onClick={onRemoveTournament}
+            type="button"
+            disabled={tournaments.length <= 1}
+          >
+            <Trash2 size={16} />
+            Remove
+          </button>
+          <button className="btn" onClick={onToggleTheme} type="button" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+        </div>
+      )}
+
+      {/* League Controls (only show when in league section) */}
+      {activeSection === 'league' && (
+        <div className="tournament-controls">
+          <button className="btn" onClick={onToggleTheme} type="button" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+        </div>
+      )}
+
       <span className="pill">
         <WifiOff size={12} />
         Offline • Cookies (localStorage fallback)
@@ -75,4 +124,3 @@ export default function Header({ tournaments, activeTournamentId, onTournamentCh
     </header>
   );
 }
-
