@@ -1105,3 +1105,220 @@
     gap: 4px;
   }
 }
+
+/* ========================================
+   MONEY ROUND
+   ======================================== */
+
+.money-round-courts {
+  margin-top: 20px;
+}
+
+.money-round-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(234, 179, 8, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  color: var(--warning);
+}
+
+.money-round-banner strong {
+  color: var(--warning);
+}
+
+.money-round-banner span {
+  color: var(--text-secondary);
+}
+
+.money-round-header {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(234, 179, 8, 0.1)) !important;
+  border-bottom-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+.match-card.money-round {
+  border-left: 3px solid var(--warning);
+}
+
+.match-card.money-round.completed {
+  border-left-color: var(--success);
+}
+
+/* Prize Pool Dashboard */
+.prize-pool-dashboard {
+  padding: 0;
+}
+
+.prize-pool-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.prize-pool-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.prize-pool-card.balance {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(21, 128, 61, 0.05));
+  border-color: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.prize-pool-card.unpaid {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(185, 28, 28, 0.05));
+  border-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+.prize-pool-card.paid {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 179, 8, 0.05));
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.prize-pool-card.payouts {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(124, 58, 237, 0.05));
+  border-color: rgba(139, 92, 246, 0.2);
+  color: var(--primary);
+}
+
+.prize-pool-card .card-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.prize-pool-card .card-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.prize-pool-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.contributions-list,
+.player-balances-list,
+.payouts-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.contribution-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.contribution-item.paid {
+  border-left: 3px solid var(--success);
+}
+
+.contribution-item.unpaid {
+  border-left: 3px solid var(--danger);
+}
+
+.contribution-info {
+  flex: 1;
+}
+
+.contribution-player {
+  font-weight: 600;
+}
+
+.contribution-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.contribution-amount {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--warning);
+}
+
+.player-balance-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.player-balance-details {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.balance-owed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.balance-paid {
+  color: var(--success);
+}
+
+.balance-count {
+  color: var(--text-secondary);
+}
+
+.payout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.payout-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.payout-player {
+  font-weight: 600;
+}
+
+.payout-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.payout-amount {
+  font-weight: 700;
+  color: var(--success);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.empty-state p {
+  margin-top: 12px;
+}

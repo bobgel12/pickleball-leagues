@@ -179,6 +179,36 @@ Players are ranked within their court based on performance. Movement rules:
       `
     },
     {
+      id: 'moneyround',
+      icon: Zap,
+      title: 'Money Round (Optional)',
+      content: `
+**What is the Money Round?**
+The Money Round is an optional second phase after the regular League Round. Players compete on their NEW court assignments (after ladder movement) to determine prize pool contributions.
+
+**Two-Phase Event Day Structure:**
+1. **Phase 1 - League Round:** Regular round-robin determining points and ladder movement
+2. **Phase 2 - Money Round:** Optional round-robin on new courts for prize pool
+
+**How Contributions Work:**
+• After Money Round, each player contributes based on their court rank
+• 1st place pays least (default $1), 5th place pays most (default $5)
+• Per court total: $15 ($1+$2+$3+$4+$5)
+• Per event day: $60 (4 courts × $15)
+• Full league: Up to $600+ depending on event days
+
+**Tied Rankings:**
+• Tied players split the contribution amounts
+• Example: Tied 2nd/3rd each pay $2.50 instead of $2 and $3
+
+**Key Points:**
+• Money Round scores do NOT affect league standings
+• All checked-in players must participate if enabled
+• Admin tracks paid/unpaid contributions
+• Prize pool can be distributed at league end or per event
+      `
+    },
+    {
       id: 'tips',
       icon: Award,
       title: 'Strategy Tips',
@@ -197,6 +227,12 @@ Players are ranked within their court based on performance. Movement rules:
 • Export data regularly for backup
 • Use Smart Points for most balanced competition
 • Close event days promptly to apply ladder movement
+• Configure Money Round for added competition
+
+**Money Round Strategy:**
+• Perform well in League Round to move up before Money Round
+• Win in Money Round to minimize your contribution
+• Court 4 winners contribute least overall
       `
     }
   ];

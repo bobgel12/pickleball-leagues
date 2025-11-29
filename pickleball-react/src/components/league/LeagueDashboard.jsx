@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Users, Calendar, Trophy, TrendingUp, 
   Play, Settings, Download, BarChart3,
-  Crown, Award
+  Crown, Award, DollarSign
 } from 'lucide-react';
 import { LEAGUE_STATUS, EVENT_DAY_STATUS } from '../../utils/constants.js';
 import { calculateLeagueStats } from '../../utils/leagueStorage.js';
@@ -13,6 +13,8 @@ export default function LeagueDashboard({
   standings,
   pointsLeader,
   winPercentageLeader,
+  prizePoolBalance,
+  totalUnpaid,
   onStartEventDay,
   onNavigate,
   onExport
@@ -78,6 +80,51 @@ export default function LeagueDashboard({
             <div className="stat-label">Scoring System</div>
           </div>
         </div>
+
+        {/* Prize Pool Summary (if Money Round enabled) */}
+        {league.moneyRoundEnabled && (
+          <div style={{ 
+            marginTop: '16px', 
+            padding: '16px 20px', 
+            background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(234,179,8,0.05))',
+            borderRadius: '10px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            border: '1px solid rgba(245,158,11,0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <DollarSign size={20} style={{ color: 'var(--warning)' }} />
+              <div>
+                <div style={{ fontWeight: 600 }}>Prize Pool</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Money Round enabled</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--success)' }}>
+                  ${(prizePoolBalance || 0).toFixed(2)}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>collected</div>
+              </div>
+              {totalUnpaid > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--danger)' }}>
+                    ${totalUnpaid.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>unpaid</div>
+                </div>
+              )}
+              <button 
+                className="btn" 
+                onClick={() => onNavigate('prizePool')}
+                style={{ padding: '8px 12px' }}
+              >
+                Manage
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Champion Display (if league completed) */}

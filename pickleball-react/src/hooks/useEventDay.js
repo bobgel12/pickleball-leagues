@@ -1,9 +1,13 @@
 /**
  * useEventDay - Hook for managing event day operations
+ * 
+ * Supports two-phase event structure:
+ * - Phase 1: League Round (determines ladder movement)
+ * - Phase 2: Money Round (determines prize pool contributions)
  */
 
 import { useCallback, useMemo } from 'react';
-import { EVENT_DAY_STATUS } from '../utils/constants.js';
+import { EVENT_DAY_STATUS, EVENT_DAY_PHASE } from '../utils/constants.js';
 import { generateEventDaySchedule, calculateScheduleProgress } from '../utils/roundRobin.js';
 import {
   calculateLadderMovement,
@@ -11,6 +15,14 @@ import {
   assignCourtsByPoints,
   calculatePlayerDayPerformance
 } from '../utils/ladderMovement.js';
+import {
+  applyMovementForMoneyRound,
+  generateMoneyRoundSchedule,
+  calculateMoneyRoundCourtRankings,
+  calculateContributions,
+  getMoneyRoundProgress,
+  isMoneyRoundComplete
+} from '../utils/moneyRound.js';
 
 export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById) {
   const currentEventDay = useMemo(() => {
@@ -47,7 +59,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
   }, [currentEventDay, updateEventDay]);
 
   // Close check-in and generate courts
-  const closeCheckInAndGenerateCourts = useCallback(() => {
+  const closeCheckInAndGenerateCourts = useCallback((enableMoneyRound = false) => {
     if (!currentEventDay) return false;
     if (currentEventDay.checkedInPlayers.length < 4) return false;
 
@@ -72,12 +84,15 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
 
     updateEventDay(currentEventDay.id, {
       status: EVENT_DAY_STATUS.ACTIVE,
+      phase: EVENT_DAY_PHASE.LEAGUE_ROUND,
       courtAssignments,
-      schedule
+      schedule,
+      // Money Round will be enabled if league has it enabled or if explicitly enabled for this day
+      moneyRoundEnabled: enableMoneyRound || league.moneyRoundEnabled
     });
 
     return true;
-  }, [currentEventDay, league.registeredPlayers, updateEventDay]);
+  }, [currentEventDay, league.registeredPlayers, league.moneyRoundEnabled, updateEventDay]);
 
   // Record a match score
   const recordMatchScore = useCallback((matchId, scoreA, scoreB) => {
@@ -138,10 +153,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       currentEventDay.schedule.every(m => m.status === 'completed');
   }, [currentEventDay]);
 
-  // Close event day and calculate movement
-  const closeEventDay = useCallback(() => {
+  // Complete League Round (Phase 1) - calculates movement and optionally starts Money Round
+  const completeLeagueRound = useCallback(() => {
     if (!currentEventDay) return false;
     if (!allMatchesCompleted) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.LEAGUE_ROUND) return false;
 
     // Calculate ladder movement
     const { movements, courtRankings } = calculateLadderMovement(
@@ -150,7 +166,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       league.scoringSystem
     );
 
-    // Update player stats
+    // Update player stats from League Round
     currentEventDay.courtAssignments.forEach((courtPlayers, courtIndex) => {
       courtPlayers.forEach(playerId => {
         const performance = calculatePlayerDayPerformance(
@@ -170,15 +186,141 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       });
     });
 
-    // Complete the event day
-    completeEventDay(currentEventDay.id, movements);
+    // Move to ladder movement phase and store the movements
+    updateEventDay(currentEventDay.id, {
+      phase: EVENT_DAY_PHASE.LADDER_MOVEMENT,
+      ladderMovement: movements
+    });
 
-    return true;
+    return { movements, courtRankings };
   }, [
     currentEventDay,
     allMatchesCompleted,
     league.scoringSystem,
     updatePlayerStats,
+    updateEventDay
+  ]);
+
+  // Start Money Round (Phase 2) - applies movement and generates new schedule
+  const startMoneyRound = useCallback(() => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.LADDER_MOVEMENT) return false;
+    if (!currentEventDay.moneyRoundEnabled) return false;
+
+    // Apply ladder movement to get new court assignments
+    const moneyRoundCourts = applyMovementForMoneyRound(
+      currentEventDay.courtAssignments,
+      currentEventDay.ladderMovement
+    );
+
+    // Generate Money Round schedule on the new courts
+    const moneyRoundSchedule = generateMoneyRoundSchedule(moneyRoundCourts, currentEventDay.id);
+
+    updateEventDay(currentEventDay.id, {
+      phase: EVENT_DAY_PHASE.MONEY_ROUND,
+      moneyRoundCourts,
+      moneyRoundSchedule
+    });
+
+    return true;
+  }, [currentEventDay, updateEventDay]);
+
+  // Skip Money Round and complete event day
+  const skipMoneyRound = useCallback(() => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.LADDER_MOVEMENT) return false;
+
+    // Complete the event day without Money Round
+    completeEventDay(currentEventDay.id, currentEventDay.ladderMovement);
+
+    return true;
+  }, [currentEventDay, completeEventDay]);
+
+  // Record a Money Round match score
+  const recordMoneyRoundScore = useCallback((matchId, scoreA, scoreB) => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.MONEY_ROUND) return false;
+
+    const winner = scoreA > scoreB ? 'A' : 'B';
+
+    updateEventDay(currentEventDay.id, {
+      moneyRoundSchedule: currentEventDay.moneyRoundSchedule.map(match =>
+        match.id === matchId
+          ? { ...match, scoreA, scoreB, winner, status: 'completed' }
+          : match
+      )
+    });
+
+    return true;
+  }, [currentEventDay, updateEventDay]);
+
+  // Clear a Money Round match score
+  const clearMoneyRoundScore = useCallback((matchId) => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.MONEY_ROUND) return false;
+
+    updateEventDay(currentEventDay.id, {
+      moneyRoundSchedule: currentEventDay.moneyRoundSchedule.map(match =>
+        match.id === matchId
+          ? { ...match, scoreA: null, scoreB: null, winner: null, status: 'pending' }
+          : match
+      )
+    });
+
+    return true;
+  }, [currentEventDay, updateEventDay]);
+
+  // Complete Money Round and calculate contributions
+  const completeMoneyRound = useCallback((contributionScale) => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.phase !== EVENT_DAY_PHASE.MONEY_ROUND) return false;
+    if (!isMoneyRoundComplete(currentEventDay.moneyRoundSchedule)) return false;
+
+    // Calculate rankings and contributions for each court
+    const moneyRoundResults = currentEventDay.moneyRoundCourts.map((players, courtIndex) => {
+      const courtMatches = currentEventDay.moneyRoundSchedule.filter(m => m.courtIndex === courtIndex);
+      const rankings = calculateMoneyRoundCourtRankings(players, courtMatches);
+      const contributions = calculateContributions(rankings, contributionScale);
+
+      return {
+        courtIndex,
+        rankings: contributions
+      };
+    });
+
+    updateEventDay(currentEventDay.id, {
+      moneyRoundResults
+    });
+
+    // Complete the event day
+    completeEventDay(currentEventDay.id, currentEventDay.ladderMovement);
+
+    return moneyRoundResults;
+  }, [currentEventDay, updateEventDay, completeEventDay]);
+
+  // Close event day (legacy - now routes to appropriate phase completion)
+  const closeEventDay = useCallback(() => {
+    if (!currentEventDay) return false;
+    if (!allMatchesCompleted) return false;
+
+    // If we're in League Round phase, complete the league round
+    if (currentEventDay.phase === EVENT_DAY_PHASE.LEAGUE_ROUND || 
+        !currentEventDay.phase) {
+      const result = completeLeagueRound();
+      
+      // If Money Round is not enabled, complete the event day
+      if (!currentEventDay.moneyRoundEnabled) {
+        completeEventDay(currentEventDay.id, currentEventDay.ladderMovement || []);
+      }
+      
+      return result !== false;
+    }
+
+    return false;
+  }, [
+    currentEventDay,
+    allMatchesCompleted,
+    completeLeagueRound,
     completeEventDay
   ]);
 
@@ -243,14 +385,61 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     return roundNumbers.sort((a, b) => a - b);
   }, [currentEventDay]);
 
+  // Money Round specific computed values
+  const moneyRoundProgress = useMemo(() => {
+    if (!currentEventDay || !currentEventDay.moneyRoundSchedule) {
+      return { total: 0, completed: 0, percentage: 0 };
+    }
+    return getMoneyRoundProgress(currentEventDay.moneyRoundSchedule);
+  }, [currentEventDay]);
+
+  const allMoneyRoundMatchesCompleted = useMemo(() => {
+    if (!currentEventDay || !currentEventDay.moneyRoundSchedule) return false;
+    return isMoneyRoundComplete(currentEventDay.moneyRoundSchedule);
+  }, [currentEventDay]);
+
+  const moneyRoundCourtsWithDetails = useMemo(() => {
+    if (!currentEventDay || !currentEventDay.moneyRoundCourts) return [[], [], [], []];
+    return currentEventDay.moneyRoundCourts.map(courtPlayers =>
+      courtPlayers
+        .map(id => getPlayerById(id))
+        .filter(Boolean)
+    );
+  }, [currentEventDay, getPlayerById]);
+
+  // Get Money Round matches by court
+  const getMoneyRoundMatchesByCourt = useCallback((courtIndex) => {
+    if (!currentEventDay || !currentEventDay.moneyRoundSchedule) return [];
+    return currentEventDay.moneyRoundSchedule.filter(m => m.courtIndex === courtIndex);
+  }, [currentEventDay]);
+
+  // Get current phase display name
+  const currentPhase = useMemo(() => {
+    if (!currentEventDay) return null;
+    return currentEventDay.phase || EVENT_DAY_PHASE.CHECKIN;
+  }, [currentEventDay]);
+
+  // Is Money Round enabled for this event day
+  const isMoneyRoundEnabledForDay = useMemo(() => {
+    if (!currentEventDay) return false;
+    return currentEventDay.moneyRoundEnabled || false;
+  }, [currentEventDay]);
+
   return {
     currentEventDay,
+    currentPhase,
     scheduleProgress,
     allMatchesCompleted,
     availableForCheckIn,
     checkedInPlayersDetails,
     courtAssignmentsWithDetails,
     rounds,
+
+    // Money Round
+    isMoneyRoundEnabledForDay,
+    moneyRoundProgress,
+    allMoneyRoundMatchesCompleted,
+    moneyRoundCourtsWithDetails,
 
     // Actions
     checkInPlayer,
@@ -260,9 +449,18 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     clearMatchScore,
     closeEventDay,
 
+    // Two-phase flow actions
+    completeLeagueRound,
+    startMoneyRound,
+    skipMoneyRound,
+    recordMoneyRoundScore,
+    clearMoneyRoundScore,
+    completeMoneyRound,
+
     // Queries
     getMatchesByCourt,
     getMatchesByRound,
+    getMoneyRoundMatchesByCourt,
     getLadderMovementPreview
   };
 }

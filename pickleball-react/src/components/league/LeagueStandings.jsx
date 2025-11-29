@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   ArrowLeft, Trophy, Award, Filter, 
-  TrendingUp, Crown, ArrowUpDown
+  TrendingUp, Crown, ArrowUpDown, DollarSign, CheckCircle, XCircle
 } from 'lucide-react';
 import { LEAGUE_STATUS } from '../../utils/constants.js';
 
@@ -10,9 +10,11 @@ export default function LeagueStandings({
   standings,
   pointsLeader,
   winPercentageLeader,
+  getPlayerBalance,
   onPlayerClick,
   onNavigate
 }) {
+  const [activeTab, setActiveTab] = useState('league'); // 'league' or 'money'
   const [sortBy, setSortBy] = useState('points');
   const [filterMinGames, setFilterMinGames] = useState(0);
 
@@ -44,6 +46,26 @@ export default function LeagueStandings({
     return index + 1;
   };
 
+  // Money Round standings
+  const moneyRoundStandings = useMemo(() => {
+    if (!league.moneyRoundEnabled || !getPlayerBalance) return [];
+    
+    return standings
+      .map(player => {
+        const balance = getPlayerBalance(player.id);
+        const mrStats = player.moneyRoundStats || {};
+        return {
+          ...player,
+          moneyRoundWins: mrStats.totalWins || 0,
+          moneyRoundLosses: mrStats.totalLosses || 0,
+          totalContributions: mrStats.totalContributions || 0,
+          totalPaid: mrStats.totalPaid || 0,
+          amountOwed: balance?.owed || 0
+        };
+      })
+      .sort((a, b) => a.totalContributions - b.totalContributions); // Lower contribution = better
+  }, [standings, league.moneyRoundEnabled, getPlayerBalance]);
+
   return (
     <div>
       {/* Header */}
@@ -58,8 +80,31 @@ export default function LeagueStandings({
             League Standings
           </h2>
         </div>
+        
+        {/* Tab Toggle (only if Money Round is enabled) */}
+        {league.moneyRoundEnabled && (
+          <div className="section-tabs" style={{ marginBottom: 0 }}>
+            <button
+              className={`section-tab ${activeTab === 'league' ? 'active' : ''}`}
+              onClick={() => setActiveTab('league')}
+            >
+              <TrendingUp size={16} />
+              League Stats
+            </button>
+            <button
+              className={`section-tab ${activeTab === 'money' ? 'active' : ''}`}
+              onClick={() => setActiveTab('money')}
+            >
+              <DollarSign size={16} />
+              Money Round
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* League Stats View */}
+      {activeTab === 'league' && (
+      <>
       {/* Champion Display (if league completed) */}
       {league.status === LEAGUE_STATUS.COMPLETED && isChampion && pointsLeader && (
         <div className="champion-display" style={{ marginBottom: '24px' }}>
@@ -242,6 +287,74 @@ export default function LeagueStandings({
           </div>
         )}
       </section>
+      </>
+      )}
+
+      {/* Money Round View */}
+      {activeTab === 'money' && (
+        <section className="card">
+          <table className="league-standings-table">
+            <thead>
+              <tr>
+                <th style={{ width: '60px' }}>Rank</th>
+                <th>Player</th>
+                <th style={{ width: '100px' }}>MR Record</th>
+                <th style={{ width: '120px' }}>Total Contrib.</th>
+                <th style={{ width: '100px' }}>Paid</th>
+                <th style={{ width: '100px' }}>Owed</th>
+                <th style={{ width: '80px' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moneyRoundStandings.map((player, index) => (
+                <tr 
+                  key={player.id}
+                  onClick={() => onPlayerClick && onPlayerClick(player)}
+                  style={{ cursor: onPlayerClick ? 'pointer' : 'default' }}
+                >
+                  <td className={`rank-cell ${index < 3 ? 'top-3' : ''}`}>
+                    {index + 1}
+                  </td>
+                  <td className="name-cell">
+                    {player.name}
+                  </td>
+                  <td className="mono">
+                    {player.moneyRoundWins}-{player.moneyRoundLosses}
+                  </td>
+                  <td className="mono" style={{ color: 'var(--warning)' }}>
+                    ${player.totalContributions.toFixed(2)}
+                  </td>
+                  <td className="mono" style={{ color: 'var(--success)' }}>
+                    ${player.totalPaid.toFixed(2)}
+                  </td>
+                  <td className="mono" style={{ color: player.amountOwed > 0 ? 'var(--danger)' : 'inherit' }}>
+                    ${player.amountOwed.toFixed(2)}
+                  </td>
+                  <td>
+                    {player.amountOwed === 0 ? (
+                      <span style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle size={14} /> Paid
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <XCircle size={14} /> Owes
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {moneyRoundStandings.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+              <DollarSign size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+              <p>No Money Round data yet</p>
+              <p style={{ fontSize: '12px' }}>Complete Money Rounds to see contribution stats</p>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

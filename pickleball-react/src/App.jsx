@@ -40,7 +40,8 @@ import {
   EventDayManager,
   LeagueStandings,
   PlayerLeagueProfile,
-  LeagueHelp
+  LeagueHelp,
+  PrizePoolDashboard
 } from './components/league';
 
 // Styles
@@ -611,6 +612,7 @@ function App() {
             league={leagueState.league}
             canRegisterPlayers={leagueState.canRegisterPlayers}
             onUpdateConfig={leagueState.updateLeagueConfig}
+            onUpdateMoneyRoundConfig={leagueState.updateMoneyRoundConfig}
             onRegisterPlayer={leagueState.registerPlayer}
             onRegisterPlayers={leagueState.registerPlayers}
             onRemovePlayer={leagueState.removePlayer}
@@ -651,8 +653,24 @@ function App() {
             standings={leagueState.standings}
             pointsLeader={leagueState.pointsLeader}
             winPercentageLeader={leagueState.winPercentageLeader}
+            getPlayerBalance={leagueState.getPlayerBalance}
             onPlayerClick={(player) => setSelectedPlayer(player)}
             onNavigate={handleLeagueNavigate}
+          />
+        );
+      case 'prizePool':
+        return (
+          <PrizePoolDashboard
+            league={leagueState.league}
+            getPrizePoolBalance={leagueState.getPrizePoolBalance}
+            getTotalUnpaid={leagueState.getTotalUnpaid}
+            getPlayerBalance={leagueState.getPlayerBalance}
+            markContributionPaid={leagueState.markContributionPaid}
+            markContributionUnpaid={leagueState.markContributionUnpaid}
+            recordPayout={leagueState.recordPayout}
+            getPlayerById={leagueState.getPlayerById}
+            onNavigate={handleLeagueNavigate}
+            toast={toast}
           />
         );
       case 'dashboard':
@@ -664,6 +682,8 @@ function App() {
             standings={leagueState.standings}
             pointsLeader={leagueState.pointsLeader}
             winPercentageLeader={leagueState.winPercentageLeader}
+            prizePoolBalance={leagueState.getPrizePoolBalance()}
+            totalUnpaid={leagueState.getTotalUnpaid()}
             onStartEventDay={handleStartEventDay}
             onNavigate={handleLeagueNavigate}
             onExport={leagueState.exportLeague}
@@ -772,6 +792,7 @@ function App() {
         <PlayerLeagueProfile
           player={selectedPlayer}
           league={leagueState.league}
+          getPlayerBalance={leagueState.getPlayerBalance}
           onClose={() => setSelectedPlayer(null)}
         />
       )}

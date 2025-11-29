@@ -31,8 +31,28 @@ export const EVENT_DAY_STATUS = {
   COMPLETED: 'completed'
 };
 
+// Event Day Phase (for two-phase event structure with Money Round)
+export const EVENT_DAY_PHASE = {
+  CHECKIN: 'checkin',
+  LEAGUE_ROUND: 'league_round',
+  LADDER_MOVEMENT: 'ladder_movement',
+  MONEY_ROUND: 'money_round',
+  COMPLETED: 'completed'
+};
+
 export const MATCH_STATUS = {
   PENDING: 'pending',
   COMPLETED: 'completed'
+};
+
+// Money Round Constants
+export const MONEY_ROUND_DEFAULTS = {
+  contributionScale: [1, 2, 3, 4, 5], // 1st pays $1, 5th pays $5
+  perCourtTotal: 15, // $1+$2+$3+$4+$5
+  perEventTotal: 60, // 4 courts × $15
+  distributionModes: {
+    END_OF_LEAGUE: 'end_of_league',
+    PER_EVENT: 'per_event'
+  }
 };
 

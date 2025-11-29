@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { 
   UserPlus, Users, Trash2, Upload, FileSpreadsheet,
-  Save, RefreshCw, ArrowLeft, Dice1, Settings
+  Save, RefreshCw, ArrowLeft, Dice1, Settings, DollarSign,
+  ToggleLeft, ToggleRight
 } from 'lucide-react';
-import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS } from '../../utils/constants.js';
+import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS } from '../../utils/constants.js';
 import { parseCSV } from '../../utils/csvParser.js';
 
 export default function LeagueSetup({
   league,
   canRegisterPlayers,
   onUpdateConfig,
+  onUpdateMoneyRoundConfig,
   onRegisterPlayer,
   onRegisterPlayers,
   onRemovePlayer,
@@ -24,6 +26,15 @@ export default function LeagueSetup({
   const [totalEventDays, setTotalEventDays] = useState(league.totalEventDays);
   const [maxPlayers, setMaxPlayers] = useState(league.maxPlayers || LEAGUE_DEFAULTS.maxPlayers);
   const [maxPlayersPerDay, setMaxPlayersPerDay] = useState(league.maxPlayersPerDay || LEAGUE_DEFAULTS.maxPlayersPerDay);
+  
+  // Money Round settings
+  const [moneyRoundEnabled, setMoneyRoundEnabled] = useState(league.moneyRoundEnabled || false);
+  const [contributionScale, setContributionScale] = useState(
+    league.moneyRoundConfig?.contributionScale || [...MONEY_ROUND_DEFAULTS.contributionScale]
+  );
+  const [distributionMode, setDistributionMode] = useState(
+    league.moneyRoundConfig?.distributionMode || MONEY_ROUND_DEFAULTS.distributionModes.END_OF_LEAGUE
+  );
   
   const [playerName, setPlayerName] = useState('');
   const [playerRating, setPlayerRating] = useState('');
@@ -43,8 +54,18 @@ export default function LeagueSetup({
       scoringSystem,
       totalEventDays: validatedEventDays,
       maxPlayers: validatedMaxPlayers,
-      maxPlayersPerDay: validatedMaxPerDay
+      maxPlayersPerDay: validatedMaxPerDay,
+      moneyRoundEnabled
     });
+
+    // Update Money Round config if the function is provided
+    if (onUpdateMoneyRoundConfig) {
+      onUpdateMoneyRoundConfig({
+        enabled: moneyRoundEnabled,
+        contributionScale,
+        distributionMode
+      });
+    }
     
     // Update local state with validated values
     setMaxPlayers(validatedMaxPlayers);
@@ -53,6 +74,11 @@ export default function LeagueSetup({
     
     if (toast) toast.success('League settings saved');
   };
+
+  // Calculate per-court and per-event totals based on contribution scale
+  const perCourtTotal = contributionScale.reduce((sum, val) => sum + val, 0);
+  const perEventTotal = perCourtTotal * 4;
+  const fullLeagueTotal = perEventTotal * totalEventDays;
 
   const handleAddPlayer = () => {
     if (!playerName.trim()) return;
@@ -283,6 +309,103 @@ export default function LeagueSetup({
               </button>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Money Round Configuration */}
+      <section className="card">
+        <h2 style={{ margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <DollarSign size={20} />
+          Money Round Settings
+        </h2>
+
+        <div className="form-section">
+          <div className="form-row" style={{ alignItems: 'center' }}>
+            <button
+              className={`btn ${moneyRoundEnabled ? 'primary' : ''}`}
+              onClick={() => setMoneyRoundEnabled(!moneyRoundEnabled)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px' }}
+            >
+              {moneyRoundEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+              Money Round: {moneyRoundEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+              {moneyRoundEnabled 
+                ? 'Players play a second round on new courts after ladder movement'
+                : 'Event days will only have the League Round'}
+            </span>
+          </div>
+
+          {moneyRoundEnabled && (
+            <>
+              <div style={{ marginTop: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Contribution Scale (by court rank)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                  {contributionScale.map((amount, index) => (
+                    <div key={index} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        {index + 1}{index === 0 ? 'st' : index === 1 ? 'nd' : index === 2 ? 'rd' : 'th'}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={amount}
+                        onChange={(e) => {
+                          const newScale = [...contributionScale];
+                          newScale[index] = parseFloat(e.target.value) || 0;
+                          setContributionScale(newScale);
+                        }}
+                        style={{ width: '100%', textAlign: 'center' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <small style={{ color: 'var(--text-secondary)' }}>
+                  1st (best) pays ${contributionScale[0]}, 5th pays ${contributionScale[4]}
+                </small>
+              </div>
+
+              <div className="form-row" style={{ marginTop: '16px' }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Prize Pool Distribution</label>
+                  <select value={distributionMode} onChange={(e) => setDistributionMode(e.target.value)}>
+                    <option value="end_of_league">End of League (accumulate)</option>
+                    <option value="per_event">Per Event (pay out each day)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '16px', 
+                background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(234,179,8,0.05))',
+                borderRadius: '10px',
+                border: '1px solid rgba(245,158,11,0.2)'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '12px', color: 'var(--warning)' }}>
+                  💰 Prize Pool Projection
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: '700' }}>${perCourtTotal}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>per court</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: '700' }}>${perEventTotal}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>per event</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--success)' }}>${fullLeagueTotal}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>full league</div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

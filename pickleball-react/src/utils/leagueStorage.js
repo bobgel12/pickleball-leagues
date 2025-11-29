@@ -2,7 +2,7 @@
  * League Storage - Persistence and Export/Import for Ladder League
  */
 
-import { LEAGUE_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS } from './constants.js';
+import { LEAGUE_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS } from './constants.js';
 
 /**
  * Create a default league state
@@ -22,6 +22,19 @@ export function createDefaultLeague(overrides = {}) {
     currentEventDayIndex: -1,
     status: LEAGUE_STATUS.SETUP,
     createdAt: Date.now(),
+    // Money Round Configuration
+    moneyRoundEnabled: false,
+    moneyRoundConfig: {
+      contributionScale: [...MONEY_ROUND_DEFAULTS.contributionScale],
+      distributionMode: MONEY_ROUND_DEFAULTS.distributionModes.END_OF_LEAGUE,
+      perEventPayoutRules: null
+    },
+    // Prize Pool Tracking
+    prizePool: {
+      balance: 0,
+      contributions: [], // { id, eventDayId, playerId, amount, paid: boolean, paidAt: null }
+      payouts: [] // { id, playerId, amount, date, reason }
+    },
     ...overrides
   };
 }
@@ -42,7 +55,15 @@ export function createLeaguePlayer(id, name, duprRating) {
     eventDaysAttended: 0,
     courtHistory: [],
     ladderPositionHistory: [],
-    registeredAt: Date.now()
+    registeredAt: Date.now(),
+    // Money Round Stats (separate from league stats)
+    moneyRoundStats: {
+      totalWins: 0,
+      totalLosses: 0,
+      totalContributions: 0,
+      totalPaid: 0,
+      contributionHistory: [] // { eventDayId, courtIndex, rank, amount }
+    }
   };
 }
 
@@ -58,7 +79,14 @@ export function createEventDay(id, dayNumber) {
     courtAssignments: [[], [], [], []],
     schedule: [],
     status: EVENT_DAY_STATUS.PENDING,
+    // Phase tracking for two-phase event structure
+    phase: EVENT_DAY_PHASE.CHECKIN,
     ladderMovement: [],
+    // Money Round fields
+    moneyRoundEnabled: false,
+    moneyRoundCourts: [[], [], [], []], // Court assignments after ladder movement
+    moneyRoundSchedule: [], // Separate schedule for money round matches
+    moneyRoundResults: [], // { courtIndex, rankings: [{playerId, rank, contribution}] }
     createdAt: Date.now(),
     completedAt: null
   };
@@ -122,7 +150,16 @@ export function normalizeLeagueState(league) {
   // Ensure registeredPlayers have all required fields
   normalized.registeredPlayers = (normalized.registeredPlayers || []).map(player => ({
     ...createLeaguePlayer(player.id, player.name, player.duprRating),
-    ...player
+    ...player,
+    // Ensure moneyRoundStats exists
+    moneyRoundStats: {
+      totalWins: 0,
+      totalLosses: 0,
+      totalContributions: 0,
+      totalPaid: 0,
+      contributionHistory: [],
+      ...(player.moneyRoundStats || {})
+    }
   }));
 
   // Ensure eventDays have all required fields
@@ -130,6 +167,24 @@ export function normalizeLeagueState(league) {
     ...createEventDay(day.id || index + 1, day.dayNumber || index + 1),
     ...day
   }));
+
+  // Ensure prizePool exists
+  if (!normalized.prizePool) {
+    normalized.prizePool = {
+      balance: 0,
+      contributions: [],
+      payouts: []
+    };
+  }
+
+  // Ensure moneyRoundConfig exists
+  if (!normalized.moneyRoundConfig) {
+    normalized.moneyRoundConfig = {
+      contributionScale: [...MONEY_ROUND_DEFAULTS.contributionScale],
+      distributionMode: MONEY_ROUND_DEFAULTS.distributionModes.END_OF_LEAGUE,
+      perEventPayoutRules: null
+    };
+  }
 
   return normalized;
 }
@@ -139,7 +194,7 @@ export function normalizeLeagueState(league) {
  */
 export function exportLeagueToJSON(league) {
   const exportData = {
-    version: '1.0',
+    version: '1.1', // Updated version for Money Round support
     exportDate: new Date().toISOString(),
     exportTimestamp: Date.now(),
     league: {
@@ -153,7 +208,10 @@ export function exportLeagueToJSON(league) {
       scoringSystem: league.scoringSystem,
       currentEventDayIndex: league.currentEventDayIndex,
       status: league.status,
-      createdAt: league.createdAt
+      createdAt: league.createdAt,
+      // Money Round Configuration
+      moneyRoundEnabled: league.moneyRoundEnabled || false,
+      moneyRoundConfig: league.moneyRoundConfig || null
     },
     players: league.registeredPlayers.map(player => ({
       id: player.id,
@@ -167,7 +225,9 @@ export function exportLeagueToJSON(league) {
       eventDaysAttended: player.eventDaysAttended,
       courtHistory: player.courtHistory,
       ladderPositionHistory: player.ladderPositionHistory,
-      registeredAt: player.registeredAt
+      registeredAt: player.registeredAt,
+      // Money Round Stats
+      moneyRoundStats: player.moneyRoundStats || null
     })),
     eventDays: league.eventDays.map(day => ({
       id: day.id,
@@ -177,10 +237,18 @@ export function exportLeagueToJSON(league) {
       courtAssignments: day.courtAssignments,
       schedule: day.schedule,
       status: day.status,
+      phase: day.phase,
       ladderMovement: day.ladderMovement,
+      // Money Round Data
+      moneyRoundEnabled: day.moneyRoundEnabled || false,
+      moneyRoundCourts: day.moneyRoundCourts || [[], [], [], []],
+      moneyRoundSchedule: day.moneyRoundSchedule || [],
+      moneyRoundResults: day.moneyRoundResults || [],
       createdAt: day.createdAt,
       completedAt: day.completedAt
-    }))
+    })),
+    // Prize Pool Data
+    prizePool: league.prizePool || { balance: 0, contributions: [], payouts: [] }
   };
 
   return exportData;
@@ -252,7 +320,9 @@ export function importLeagueFromJSON(data) {
     eventDays: data.eventDays.map((day, index) => ({
       ...createEventDay(day.id || index + 1, day.dayNumber || index + 1),
       ...day
-    }))
+    })),
+    // Import prize pool if present
+    prizePool: data.prizePool || { balance: 0, contributions: [], payouts: [] }
   };
 
   return normalizeLeagueState(league);

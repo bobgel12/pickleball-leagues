@@ -1,9 +1,10 @@
 import React from 'react';
-import { X, Trophy, Award, TrendingUp, Calendar, Target } from 'lucide-react';
+import { X, Trophy, Award, TrendingUp, Calendar, Target, DollarSign, CheckCircle, XCircle } from 'lucide-react';
 
 export default function PlayerLeagueProfile({
   player,
   league,
+  getPlayerBalance,
   onClose
 }) {
   if (!player) return null;
@@ -164,6 +165,117 @@ export default function PlayerLeagueProfile({
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
           <Calendar size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
           <p>No matches played yet</p>
+        </div>
+      )}
+
+      {/* Money Round Stats (if enabled) */}
+      {league.moneyRoundEnabled && player.moneyRoundStats && (
+        <div style={{ padding: '24px', borderTop: '1px solid var(--border)' }}>
+          <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <DollarSign size={16} />
+            Money Round Stats
+          </h3>
+          
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(3, 1fr)', 
+            gap: '12px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ 
+              padding: '12px', 
+              background: 'var(--surface)', 
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: 700 }}>
+                {player.moneyRoundStats.totalWins || 0}-{player.moneyRoundStats.totalLosses || 0}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>MR Record</div>
+            </div>
+            <div style={{ 
+              padding: '12px', 
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(234,179,8,0.05))', 
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--warning)' }}>
+                ${(player.moneyRoundStats.totalContributions || 0).toFixed(2)}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Contrib.</div>
+            </div>
+            <div style={{ 
+              padding: '12px', 
+              background: 'var(--surface)', 
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              {getPlayerBalance && (() => {
+                const balance = getPlayerBalance(player.id);
+                const owed = balance?.owed || 0;
+                return (
+                  <>
+                    <div style={{ 
+                      fontSize: '18px', 
+                      fontWeight: 700, 
+                      color: owed > 0 ? 'var(--danger)' : 'var(--success)' 
+                    }}>
+                      {owed > 0 ? (
+                        <><XCircle size={14} style={{ marginRight: '4px' }} />${owed.toFixed(2)}</>
+                      ) : (
+                        <><CheckCircle size={14} style={{ marginRight: '4px' }} />Paid</>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {owed > 0 ? 'Amount Owed' : 'Status'}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Contribution History */}
+          {player.moneyRoundStats.contributionHistory && player.moneyRoundStats.contributionHistory.length > 0 && (
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>
+                Contribution History
+              </div>
+              <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                {[...player.moneyRoundStats.contributionHistory]
+                  .reverse()
+                  .slice(0, 5)
+                  .map((entry, index) => {
+                    const eventDay = league.eventDays?.find(d => d.id === entry.eventDayId);
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          padding: '8px 12px',
+                          marginBottom: '4px',
+                          background: 'var(--surface)',
+                          borderRadius: '6px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '13px'
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontWeight: 500 }}>Day {eventDay?.dayNumber || '?'}</span>
+                          <span style={{ color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                            Court {(entry.courtIndex || 0) + 1} • #{entry.rank || '?'}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 600, color: 'var(--warning)' }}>
+                          ${entry.amount.toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -294,6 +294,280 @@ export function useLeagueState() {
     .filter(p => p.totalWins + p.totalLosses >= 5) // Minimum games requirement
     .sort((a, b) => b.winPercentage - a.winPercentage)[0] || null;
 
+  // ==========================================
+  // MONEY ROUND & PRIZE POOL MANAGEMENT
+  // ==========================================
+
+  // Update Money Round configuration
+  const updateMoneyRoundConfig = useCallback((config) => {
+    setLeague(prev => ({
+      ...prev,
+      moneyRoundEnabled: config.enabled !== undefined ? config.enabled : prev.moneyRoundEnabled,
+      moneyRoundConfig: {
+        ...prev.moneyRoundConfig,
+        ...config
+      }
+    }));
+  }, []);
+
+  // Record a contribution to the prize pool
+  const recordContribution = useCallback((eventDayId, playerId, amount) => {
+    const contributionId = Date.now();
+    
+    setLeague(prev => {
+      // Update prize pool
+      const newContribution = {
+        id: contributionId,
+        eventDayId,
+        playerId,
+        amount,
+        paid: false,
+        paidAt: null,
+        createdAt: Date.now()
+      };
+
+      const newPrizePool = {
+        ...prev.prizePool,
+        contributions: [...(prev.prizePool?.contributions || []), newContribution]
+      };
+
+      // Update player's money round stats
+      const updatedPlayers = prev.registeredPlayers.map(p => {
+        if (p.id !== playerId) return p;
+        
+        return {
+          ...p,
+          moneyRoundStats: {
+            ...p.moneyRoundStats,
+            totalContributions: (p.moneyRoundStats?.totalContributions || 0) + amount,
+            contributionHistory: [
+              ...(p.moneyRoundStats?.contributionHistory || []),
+              { eventDayId, amount, date: Date.now() }
+            ]
+          }
+        };
+      });
+
+      return {
+        ...prev,
+        prizePool: newPrizePool,
+        registeredPlayers: updatedPlayers
+      };
+    });
+
+    return contributionId;
+  }, []);
+
+  // Record multiple contributions at once (after Money Round completion)
+  const recordContributions = useCallback((eventDayId, contributions) => {
+    setLeague(prev => {
+      const newContributions = contributions.map((c, index) => ({
+        id: Date.now() + index,
+        eventDayId,
+        playerId: c.playerId,
+        amount: c.contribution,
+        courtIndex: c.courtIndex,
+        rank: c.rank,
+        paid: false,
+        paidAt: null,
+        createdAt: Date.now()
+      }));
+
+      // Update prize pool balance with unpaid amounts
+      const totalUnpaid = newContributions.reduce((sum, c) => sum + c.amount, 0);
+
+      const newPrizePool = {
+        ...prev.prizePool,
+        contributions: [...(prev.prizePool?.contributions || []), ...newContributions]
+      };
+
+      // Update each player's money round stats
+      const updatedPlayers = prev.registeredPlayers.map(p => {
+        const playerContribution = contributions.find(c => c.playerId === p.id);
+        if (!playerContribution) return p;
+        
+        return {
+          ...p,
+          moneyRoundStats: {
+            ...p.moneyRoundStats,
+            totalContributions: (p.moneyRoundStats?.totalContributions || 0) + playerContribution.contribution,
+            contributionHistory: [
+              ...(p.moneyRoundStats?.contributionHistory || []),
+              {
+                eventDayId,
+                courtIndex: playerContribution.courtIndex,
+                rank: playerContribution.rank,
+                amount: playerContribution.contribution,
+                date: Date.now()
+              }
+            ]
+          }
+        };
+      });
+
+      return {
+        ...prev,
+        prizePool: newPrizePool,
+        registeredPlayers: updatedPlayers
+      };
+    });
+  }, []);
+
+  // Mark a contribution as paid
+  const markContributionPaid = useCallback((contributionId) => {
+    setLeague(prev => {
+      const contribution = prev.prizePool?.contributions?.find(c => c.id === contributionId);
+      if (!contribution || contribution.paid) return prev;
+
+      const newContributions = prev.prizePool.contributions.map(c =>
+        c.id === contributionId
+          ? { ...c, paid: true, paidAt: Date.now() }
+          : c
+      );
+
+      // Update prize pool balance
+      const newBalance = (prev.prizePool?.balance || 0) + contribution.amount;
+
+      // Update player's paid total
+      const updatedPlayers = prev.registeredPlayers.map(p => {
+        if (p.id !== contribution.playerId) return p;
+        return {
+          ...p,
+          moneyRoundStats: {
+            ...p.moneyRoundStats,
+            totalPaid: (p.moneyRoundStats?.totalPaid || 0) + contribution.amount
+          }
+        };
+      });
+
+      return {
+        ...prev,
+        prizePool: {
+          ...prev.prizePool,
+          balance: newBalance,
+          contributions: newContributions
+        },
+        registeredPlayers: updatedPlayers
+      };
+    });
+  }, []);
+
+  // Mark a contribution as unpaid (undo payment)
+  const markContributionUnpaid = useCallback((contributionId) => {
+    setLeague(prev => {
+      const contribution = prev.prizePool?.contributions?.find(c => c.id === contributionId);
+      if (!contribution || !contribution.paid) return prev;
+
+      const newContributions = prev.prizePool.contributions.map(c =>
+        c.id === contributionId
+          ? { ...c, paid: false, paidAt: null }
+          : c
+      );
+
+      // Update prize pool balance
+      const newBalance = Math.max(0, (prev.prizePool?.balance || 0) - contribution.amount);
+
+      // Update player's paid total
+      const updatedPlayers = prev.registeredPlayers.map(p => {
+        if (p.id !== contribution.playerId) return p;
+        return {
+          ...p,
+          moneyRoundStats: {
+            ...p.moneyRoundStats,
+            totalPaid: Math.max(0, (p.moneyRoundStats?.totalPaid || 0) - contribution.amount)
+          }
+        };
+      });
+
+      return {
+        ...prev,
+        prizePool: {
+          ...prev.prizePool,
+          balance: newBalance,
+          contributions: newContributions
+        },
+        registeredPlayers: updatedPlayers
+      };
+    });
+  }, []);
+
+  // Record a payout from the prize pool
+  const recordPayout = useCallback((playerId, amount, reason) => {
+    const payoutId = Date.now();
+
+    setLeague(prev => {
+      const newBalance = Math.max(0, (prev.prizePool?.balance || 0) - amount);
+
+      const newPayout = {
+        id: payoutId,
+        playerId,
+        amount,
+        reason,
+        date: Date.now()
+      };
+
+      return {
+        ...prev,
+        prizePool: {
+          ...prev.prizePool,
+          balance: newBalance,
+          payouts: [...(prev.prizePool?.payouts || []), newPayout]
+        }
+      };
+    });
+
+    return payoutId;
+  }, []);
+
+  // Get prize pool balance
+  const getPrizePoolBalance = useCallback(() => {
+    return league.prizePool?.balance || 0;
+  }, [league.prizePool]);
+
+  // Get total unpaid contributions
+  const getTotalUnpaid = useCallback(() => {
+    if (!league.prizePool?.contributions) return 0;
+    return league.prizePool.contributions
+      .filter(c => !c.paid)
+      .reduce((sum, c) => sum + c.amount, 0);
+  }, [league.prizePool]);
+
+  // Get player's balance (what they owe)
+  const getPlayerBalance = useCallback((playerId) => {
+    if (!league.prizePool?.contributions) return { owed: 0, paid: 0 };
+    
+    const playerContributions = league.prizePool.contributions.filter(c => c.playerId === playerId);
+    const owed = playerContributions.filter(c => !c.paid).reduce((sum, c) => sum + c.amount, 0);
+    const paid = playerContributions.filter(c => c.paid).reduce((sum, c) => sum + c.amount, 0);
+    
+    return { owed, paid, total: owed + paid };
+  }, [league.prizePool]);
+
+  // Get all contributions for an event day
+  const getEventDayContributions = useCallback((eventDayId) => {
+    if (!league.prizePool?.contributions) return [];
+    return league.prizePool.contributions.filter(c => c.eventDayId === eventDayId);
+  }, [league.prizePool]);
+
+  // Update player Money Round stats (wins/losses from Money Round matches)
+  const updatePlayerMoneyRoundStats = useCallback((playerId, stats) => {
+    setLeague(prev => ({
+      ...prev,
+      registeredPlayers: prev.registeredPlayers.map(p =>
+        p.id === playerId
+          ? {
+              ...p,
+              moneyRoundStats: {
+                ...p.moneyRoundStats,
+                totalWins: (p.moneyRoundStats?.totalWins || 0) + (stats.wins || 0),
+                totalLosses: (p.moneyRoundStats?.totalLosses || 0) + (stats.losses || 0)
+              }
+            }
+          : p
+      )
+    }));
+  }, []);
+
   return {
     league,
     currentEventDay,
@@ -323,7 +597,20 @@ export function useLeagueState() {
 
     // Export/Import
     exportLeague,
-    importLeague
+    importLeague,
+
+    // Money Round & Prize Pool
+    updateMoneyRoundConfig,
+    recordContribution,
+    recordContributions,
+    markContributionPaid,
+    markContributionUnpaid,
+    recordPayout,
+    getPrizePoolBalance,
+    getTotalUnpaid,
+    getPlayerBalance,
+    getEventDayContributions,
+    updatePlayerMoneyRoundStats
   };
 }
 
