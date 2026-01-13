@@ -2,7 +2,7 @@
  * League Storage - Persistence and Export/Import for Ladder League
  */
 
-import { LEAGUE_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS } from './constants.js';
+import { LEAGUE_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS, LEAGUE_MODE } from './constants.js';
 
 /**
  * Create a default league state
@@ -17,11 +17,14 @@ export function createDefaultLeague(overrides = {}) {
     playersPerCourt: LEAGUE_DEFAULTS.playersPerCourt,
     totalEventDays: LEAGUE_DEFAULTS.totalEventDays,
     scoringSystem: 'court',
+    leagueMode: LEAGUE_MODE.REGULAR, // 'regular' or 'mixed_doubles'
     registeredPlayers: [],
     eventDays: [],
     currentEventDayIndex: -1,
     status: LEAGUE_STATUS.SETUP,
     createdAt: Date.now(),
+    // Partner assignments for mixed doubles: { [playerId]: partnerId }
+    partners: {},
     // Money Round Configuration
     moneyRoundEnabled: false,
     moneyRoundConfig: {
@@ -42,11 +45,12 @@ export function createDefaultLeague(overrides = {}) {
 /**
  * Create a default league player
  */
-export function createLeaguePlayer(id, name, duprRating) {
+export function createLeaguePlayer(id, name, duprRating, gender = null) {
   return {
     id,
     name,
     duprRating: duprRating || 4.5,
+    gender: gender || null, // 'male', 'female', or null
     cumulativePoints: 0,
     totalWins: 0,
     totalLosses: 0,
@@ -149,7 +153,7 @@ export function normalizeLeagueState(league) {
 
   // Ensure registeredPlayers have all required fields
   normalized.registeredPlayers = (normalized.registeredPlayers || []).map(player => ({
-    ...createLeaguePlayer(player.id, player.name, player.duprRating),
+    ...createLeaguePlayer(player.id, player.name, player.duprRating, player.gender),
     ...player,
     // Ensure moneyRoundStats exists
     moneyRoundStats: {
@@ -161,6 +165,16 @@ export function normalizeLeagueState(league) {
       ...(player.moneyRoundStats || {})
     }
   }));
+
+  // Ensure leagueMode exists (default to regular for backward compatibility)
+  if (!normalized.leagueMode) {
+    normalized.leagueMode = LEAGUE_MODE.REGULAR;
+  }
+
+  // Ensure partners object exists
+  if (!normalized.partners || typeof normalized.partners !== 'object') {
+    normalized.partners = {};
+  }
 
   // Ensure eventDays have all required fields
   normalized.eventDays = (normalized.eventDays || []).map((day, index) => ({
@@ -206,6 +220,7 @@ export function exportLeagueToJSON(league) {
       playersPerCourt: league.playersPerCourt,
       totalEventDays: league.totalEventDays,
       scoringSystem: league.scoringSystem,
+      leagueMode: league.leagueMode || LEAGUE_MODE.REGULAR,
       currentEventDayIndex: league.currentEventDayIndex,
       status: league.status,
       createdAt: league.createdAt,
@@ -217,6 +232,7 @@ export function exportLeagueToJSON(league) {
       id: player.id,
       name: player.name,
       duprRating: player.duprRating,
+      gender: player.gender || null,
       cumulativePoints: player.cumulativePoints,
       totalWins: player.totalWins,
       totalLosses: player.totalLosses,
@@ -248,7 +264,9 @@ export function exportLeagueToJSON(league) {
       completedAt: day.completedAt
     })),
     // Prize Pool Data
-    prizePool: league.prizePool || { balance: 0, contributions: [], payouts: [] }
+    prizePool: league.prizePool || { balance: 0, contributions: [], payouts: [] },
+    // Partner assignments for mixed doubles
+    partners: league.partners || {}
   };
 
   return exportData;
@@ -314,7 +332,7 @@ export function importLeagueFromJSON(data) {
     ...createDefaultLeague(),
     ...data.league,
     registeredPlayers: data.players.map(player => ({
-      ...createLeaguePlayer(player.id, player.name, player.duprRating),
+      ...createLeaguePlayer(player.id, player.name, player.duprRating, player.gender),
       ...player
     })),
     eventDays: data.eventDays.map((day, index) => ({
@@ -322,7 +340,9 @@ export function importLeagueFromJSON(data) {
       ...day
     })),
     // Import prize pool if present
-    prizePool: data.prizePool || { balance: 0, contributions: [], payouts: [] }
+    prizePool: data.prizePool || { balance: 0, contributions: [], payouts: [] },
+    // Import partners if present
+    partners: data.partners || {}
   };
 
   return normalizeLeagueState(league);
@@ -443,3 +463,138 @@ export function getLeagueStandings(league) {
   }));
 }
 
+/**
+ * Partner Management Functions for Mixed Doubles
+ */
+
+/**
+ * Get partner ID for a player
+ * @param {Object} league - League object
+ * @param {number} playerId - Player ID
+ * @returns {number|null} Partner ID or null
+ */
+export function getPartner(league, playerId) {
+  return league.partners?.[playerId] || null;
+}
+
+/**
+ * Set partner for a player (bidirectional)
+ * @param {Object} league - League object
+ * @param {number} playerId1 - First player ID
+ * @param {number} playerId2 - Second player ID (null to remove partnership)
+ * @returns {Object} Updated league object
+ */
+export function setPartner(league, playerId1, playerId2) {
+  const newPartners = { ...(league.partners || {}) };
+  
+  // Remove existing partnerships for both players
+  const oldPartner1 = newPartners[playerId1];
+  const oldPartner2 = newPartners[playerId2];
+  
+  if (oldPartner1) {
+    delete newPartners[oldPartner1];
+  }
+  if (oldPartner2) {
+    delete newPartners[oldPartner2];
+  }
+  
+  // Set new partnership (bidirectional)
+  if (playerId2 !== null && playerId2 !== undefined) {
+    newPartners[playerId1] = playerId2;
+    newPartners[playerId2] = playerId1;
+  } else {
+    delete newPartners[playerId1];
+  }
+  
+  return {
+    ...league,
+    partners: newPartners
+  };
+}
+
+/**
+ * Validate that a partnership is valid (1 man + 1 woman)
+ * @param {Object} league - League object
+ * @param {number} playerId1 - First player ID
+ * @param {number} playerId2 - Second player ID
+ * @returns {Object} { valid: boolean, error: string|null }
+ */
+export function validatePartnership(league, playerId1, playerId2) {
+  const player1 = getLeaguePlayerById(league, playerId1);
+  const player2 = getLeaguePlayerById(league, playerId2);
+  
+  if (!player1 || !player2) {
+    return { valid: false, error: 'One or both players not found' };
+  }
+  
+  if (league.leagueMode !== LEAGUE_MODE.MIXED_DOUBLES) {
+    return { valid: true, error: null }; // No validation needed for regular leagues
+  }
+  
+  if (!player1.gender || !player2.gender) {
+    return { valid: false, error: 'Both players must have a gender assigned' };
+  }
+  
+  if (player1.gender === player2.gender) {
+    return { valid: false, error: 'Partners must be of different genders (1 man + 1 woman)' };
+  }
+  
+  return { valid: true, error: null };
+}
+
+/**
+ * Auto-assign partners based on ladder position
+ * Pairs top man with top woman, second man with second woman, etc.
+ * @param {Object} league - League object
+ * @returns {Object} Updated league object with partners assigned
+ */
+export function autoAssignPartners(league) {
+  if (league.leagueMode !== LEAGUE_MODE.MIXED_DOUBLES) {
+    return league; // No auto-assignment for regular leagues
+  }
+  
+  // Get standings sorted by cumulative points (or DUPR for new players)
+  const standings = getLeagueStandings(league);
+  
+  // Separate by gender
+  const men = standings.filter(p => p.gender === 'male');
+  const women = standings.filter(p => p.gender === 'female');
+  
+  if (men.length === 0 || women.length === 0) {
+    return league; // Can't assign partners without both genders
+  }
+  
+  // Pair by position: top man with top woman, etc.
+  const newPartners = {};
+  const minPairs = Math.min(men.length, women.length);
+  
+  for (let i = 0; i < minPairs; i++) {
+    const manId = men[i].id;
+    const womanId = women[i].id;
+    newPartners[manId] = womanId;
+    newPartners[womanId] = manId;
+  }
+  
+  return {
+    ...league,
+    partners: newPartners
+  };
+}
+
+/**
+ * Check if partners can be changed (only between event days)
+ * @param {Object} league - League object
+ * @returns {Object} { canChange: boolean, reason: string|null }
+ */
+export function canChangePartners(league) {
+  const currentDay = getCurrentEventDay(league);
+  
+  if (currentDay && currentDay.status !== EVENT_DAY_STATUS.COMPLETED) {
+    return {
+      canChange: false,
+      reason: 'Partners can only be changed between event days. Please complete the current event day first.'
+    };
+  }
+  
+  return { canChange: true, reason: null };
+}

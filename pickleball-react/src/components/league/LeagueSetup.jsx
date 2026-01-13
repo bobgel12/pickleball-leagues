@@ -4,7 +4,7 @@ import {
   Save, RefreshCw, ArrowLeft, Dice1, Settings, DollarSign,
   ToggleLeft, ToggleRight
 } from 'lucide-react';
-import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS } from '../../utils/constants.js';
+import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS, LEAGUE_MODE, GENDER } from '../../utils/constants.js';
 import { parseCSV } from '../../utils/csvParser.js';
 
 export default function LeagueSetup({
@@ -19,9 +19,16 @@ export default function LeagueSetup({
   onImportLeague,
   onResetLeague,
   onNavigate,
-  toast
+  toast,
+  // Partner management props (for mixed doubles)
+  onAssignPartner,
+  onRemovePartner,
+  onAutoAssignPartners,
+  canModifyPartners,
+  getPlayerPartner
 }) {
   const [leagueName, setLeagueName] = useState(league.name);
+  const [leagueMode, setLeagueMode] = useState(league.leagueMode || LEAGUE_MODE.REGULAR);
   const [scoringSystem, setScoringSystem] = useState(league.scoringSystem);
   const [totalEventDays, setTotalEventDays] = useState(league.totalEventDays);
   const [maxPlayers, setMaxPlayers] = useState(league.maxPlayers || LEAGUE_DEFAULTS.maxPlayers);
@@ -38,6 +45,7 @@ export default function LeagueSetup({
   
   const [playerName, setPlayerName] = useState('');
   const [playerRating, setPlayerRating] = useState('');
+  const [playerGender, setPlayerGender] = useState('');
 
   const handleSaveConfig = () => {
     const parsedMaxPlayers = parseInt(maxPlayers) || LEAGUE_DEFAULTS.maxPlayers;
@@ -51,6 +59,7 @@ export default function LeagueSetup({
     
     onUpdateConfig({
       name: leagueName,
+      leagueMode,
       scoringSystem,
       totalEventDays: validatedEventDays,
       maxPlayers: validatedMaxPlayers,
@@ -85,10 +94,12 @@ export default function LeagueSetup({
     
     const rating = playerRating ? parseFloat(playerRating) : DEFAULT_DUPR_RATING;
     const clampedRating = Math.max(MIN_DUPR_RATING, Math.min(MAX_DUPR_RATING, rating));
+    const gender = leagueMode === LEAGUE_MODE.MIXED_DOUBLES && playerGender ? playerGender : null;
     
-    onRegisterPlayer(playerName.trim(), clampedRating);
+    onRegisterPlayer(playerName.trim(), clampedRating, gender);
     setPlayerName('');
     setPlayerRating('');
+    setPlayerGender('');
     
     if (toast) toast.success(`${playerName.trim()} added to league`);
   };
@@ -99,8 +110,11 @@ export default function LeagueSetup({
     const randomName = firstNames[Math.floor(Math.random() * firstNames.length)] + " " + 
                        lastNames[Math.floor(Math.random() * lastNames.length)];
     const randomRating = Math.round((Math.random() * 4 + 3) * 1000) / 1000; // 3.0 - 7.0
+    const randomGender = leagueMode === LEAGUE_MODE.MIXED_DOUBLES 
+      ? (Math.random() > 0.5 ? GENDER.MALE : GENDER.FEMALE)
+      : null;
     
-    onRegisterPlayer(randomName, randomRating);
+    onRegisterPlayer(randomName, randomRating, randomGender);
     if (toast) toast.success(`${randomName} added to league`);
   };
 
@@ -263,8 +277,32 @@ export default function LeagueSetup({
             </div>
           </div>
 
-          {/* Row 3: Scoring System */}
+          {/* Row 3: League Mode and Scoring System */}
           <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>League Mode</label>
+              <select
+                value={leagueMode}
+                onChange={(e) => setLeagueMode(e.target.value)}
+                style={{ 
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  background: 'var(--background)',
+                  color: 'var(--text)'
+                }}
+              >
+                <option value={LEAGUE_MODE.REGULAR}>Regular Ladder League</option>
+                <option value={LEAGUE_MODE.MIXED_DOUBLES}>Mixed Doubles (1 man + 1 woman)</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                {leagueMode === LEAGUE_MODE.MIXED_DOUBLES 
+                  ? 'Players are paired as partners. Round 1 with partner, subsequent rounds maintain mixed teams.'
+                  : 'Standard ladder league format'}
+              </small>
+            </div>
             <div className="form-group" style={{ flex: 1 }}>
               <label>Scoring System</label>
               <select
@@ -275,6 +313,11 @@ export default function LeagueSetup({
                 <option value="court">Court Weighted (Court 1=1pt ... Court 4=4pts)</option>
                 <option value="smart">Smart Points (Court + Opponent + Margin)</option>
               </select>
+              {leagueMode === LEAGUE_MODE.MIXED_DOUBLES && (
+                <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                  Mixed Doubles: 2 points for wins with partner, 1 point for wins with different partner
+                </small>
+              )}
             </div>
           </div>
 
@@ -452,12 +495,27 @@ export default function LeagueSetup({
                 disabled={!canRegisterPlayers}
               />
             </div>
+            {leagueMode === LEAGUE_MODE.MIXED_DOUBLES && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Gender</label>
+                <select
+                  value={playerGender}
+                  onChange={(e) => setPlayerGender(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddPlayer()}
+                  disabled={!canRegisterPlayers}
+                >
+                  <option value="">Select...</option>
+                  <option value={GENDER.MALE}>Male</option>
+                  <option value={GENDER.FEMALE}>Female</option>
+                </select>
+              </div>
+            )}
             <div className="form-group">
               <label>&nbsp;</label>
               <button 
                 className="btn primary" 
                 onClick={handleAddPlayer}
-                disabled={!canRegisterPlayers || !playerName.trim()}
+                disabled={!canRegisterPlayers || !playerName.trim() || (leagueMode === LEAGUE_MODE.MIXED_DOUBLES && !playerGender)}
               >
                 <UserPlus size={16} />
                 Add
@@ -527,6 +585,14 @@ export default function LeagueSetup({
                   </div>
                   <div className="player-stats">
                     <span>DUPR: {player.duprRating.toFixed(3)}</span>
+                    {leagueMode === LEAGUE_MODE.MIXED_DOUBLES && player.gender && (
+                      <span style={{ 
+                        textTransform: 'capitalize',
+                        color: player.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
+                      }}>
+                        {player.gender}
+                      </span>
+                    )}
                     {player.eventDaysAttended > 0 && (
                       <>
                         <span>{player.cumulativePoints} pts</span>
@@ -558,6 +624,190 @@ export default function LeagueSetup({
           </div>
         )}
       </section>
+
+      {/* Partner Management (Mixed Doubles Only) */}
+      {leagueMode === LEAGUE_MODE.MIXED_DOUBLES && league.registeredPlayers.length > 0 && (
+        <section className="card">
+          <h2 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Users size={20} />
+            Partner Management
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
+            Assign partners for mixed doubles. Partners can only be changed between event days.
+          </p>
+
+          {canModifyPartners && !canModifyPartners.canChange && (
+            <div style={{ 
+              padding: '12px 16px', 
+              background: 'var(--warning)', 
+              color: 'white',
+              borderRadius: '8px',
+              marginBottom: '16px'
+            }}>
+              {canModifyPartners.reason}
+            </div>
+          )}
+
+          <div className="form-section">
+            <div className="form-row" style={{ marginBottom: '16px' }}>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  if (onAutoAssignPartners && onAutoAssignPartners()) {
+                    if (toast) toast.success('Partners auto-assigned based on ladder position');
+                  } else {
+                    if (toast) toast.error('Failed to auto-assign partners');
+                  }
+                }}
+                disabled={!canModifyPartners || !canModifyPartners.canChange}
+              >
+                Auto-Assign Partners
+              </button>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '13px', marginLeft: '12px' }}>
+                Pairs top man with top woman, second man with second woman, etc.
+              </span>
+            </div>
+
+            {/* Partner Assignments Display */}
+            <div style={{ marginTop: '20px' }}>
+              <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Current Partnerships</h3>
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {league.registeredPlayers.map(player => {
+                  const partnerId = getPlayerPartner ? getPlayerPartner(player.id) : null;
+                  const partner = partnerId ? league.registeredPlayers.find(p => p.id === partnerId) : null;
+                  
+                  if (partnerId && !partner) return null; // Partner was removed
+                  
+                  return (
+                    <div key={player.id} style={{ 
+                      padding: '12px 16px', 
+                      background: 'var(--surface)', 
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                        <div>
+                          <strong>{player.name}</strong>
+                          {player.gender && (
+                            <span style={{ 
+                              marginLeft: '8px',
+                              fontSize: '12px',
+                              color: player.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
+                            }}>
+                              ({player.gender})
+                            </span>
+                          )}
+                        </div>
+                        {partner ? (
+                          <>
+                            <span style={{ color: 'var(--text-secondary)' }}>↔</span>
+                            <div>
+                              <strong>{partner.name}</strong>
+                              {partner.gender && (
+                                <span style={{ 
+                                  marginLeft: '8px',
+                                  fontSize: '12px',
+                                  color: partner.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
+                                }}>
+                                  ({partner.gender})
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                            No partner assigned
+                          </span>
+                        )}
+                      </div>
+                      {partner && onRemovePartner && canModifyPartners && canModifyPartners.canChange && (
+                        <button
+                          className="btn"
+                          style={{ padding: '6px 12px', marginLeft: '12px' }}
+                          onClick={() => {
+                            if (window.confirm(`Remove partnership between ${player.name} and ${partner.name}?`)) {
+                              if (onRemovePartner(player.id)) {
+                                if (toast) toast.success('Partnership removed');
+                              }
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Manual Partner Assignment */}
+              {canModifyPartners && canModifyPartners.canChange && (
+                <div style={{ marginTop: '24px' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Manual Partner Assignment</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label>Player 1</label>
+                      <select
+                        id="partnerSelect1"
+                        style={{ width: '100%' }}
+                      >
+                        <option value="">Select player...</option>
+                        {league.registeredPlayers.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} {p.gender ? `(${p.gender})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Player 2</label>
+                      <select
+                        id="partnerSelect2"
+                        style={{ width: '100%' }}
+                      >
+                        <option value="">Select player...</option>
+                        {league.registeredPlayers.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} {p.gender ? `(${p.gender})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    className="btn primary"
+                    style={{ marginTop: '12px' }}
+                    onClick={() => {
+                      const select1 = document.getElementById('partnerSelect1');
+                      const select2 = document.getElementById('partnerSelect2');
+                      const playerId1 = parseInt(select1.value);
+                      const playerId2 = parseInt(select2.value);
+                      
+                      if (!playerId1 || !playerId2) {
+                        if (toast) toast.warning('Please select both players');
+                        return;
+                      }
+                      
+                      if (playerId1 === playerId2) {
+                        if (toast) toast.warning('A player cannot partner with themselves');
+                        return;
+                      }
+                      
+                      if (onAssignPartner && onAssignPartner(playerId1, playerId2)) {
+                        if (toast) toast.success('Partners assigned');
+                        select1.value = '';
+                        select2.value = '';
+                      } else {
+                        if (toast) toast.error('Failed to assign partners. Make sure they are of different genders.');
+                      }
+                    }}
+                  >
+                    Assign Partners
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

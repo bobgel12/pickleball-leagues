@@ -14,9 +14,11 @@ import { COURT_MULTIPLIERS, SMART_COURT_WEIGHTS } from './constants.js';
  * @param {string|number} playerId - Player ID
  * @param {Array} matches - All matches from the event day
  * @param {string} scoringSystem - 'simple', 'court', or 'smart'
+ * @param {Object} options - Options object with partners, leagueMode
  * @returns {Object} { points, wins, losses, pointsScored, pointsAllowed }
  */
-export function calculatePlayerDayPerformance(playerId, matches, scoringSystem = 'simple') {
+export function calculatePlayerDayPerformance(playerId, matches, scoringSystem = 'simple', options = {}) {
+  const { partners = {}, leagueMode = 'regular' } = options;
   const playerMatches = matches.filter(m => 
     m.status === 'completed' && 
     (m.teamA.includes(playerId) || m.teamB.includes(playerId))
@@ -30,6 +32,7 @@ export function calculatePlayerDayPerformance(playerId, matches, scoringSystem =
 
   playerMatches.forEach(match => {
     const isTeamA = match.teamA.includes(playerId);
+    const playerTeam = isTeamA ? match.teamA : match.teamB;
     const playerScore = isTeamA ? match.scoreA : match.scoreB;
     const opponentScore = isTeamA ? match.scoreB : match.scoreA;
     const won = (isTeamA && match.winner === 'A') || (!isTeamA && match.winner === 'B');
@@ -37,24 +40,31 @@ export function calculatePlayerDayPerformance(playerId, matches, scoringSystem =
     pointsScored += playerScore || 0;
     pointsAllowed += opponentScore || 0;
 
+    // Check if playing with assigned partner (for mixed doubles)
+    const playedWithPartner = leagueMode === 'mixed_doubles' && 
+      (match.playedWithPartner || (playerTeam.length === 2 && partners[playerId] === playerTeam.find(p => p !== playerId)));
+
+    // Partner bonus multiplier: 2x for wins/losses with partner, 1x without
+    const partnerMultiplier = playedWithPartner ? 2 : 1;
+
     if (won) {
       wins++;
       if (scoringSystem === 'simple') {
-        points += 1;
+        points += 1 * partnerMultiplier;
       } else if (scoringSystem === 'court') {
-        points += COURT_MULTIPLIERS[match.courtIndex] || 1;
+        points += (COURT_MULTIPLIERS[match.courtIndex] || 1) * partnerMultiplier;
       } else if (scoringSystem === 'smart') {
         const courtMultiplier = SMART_COURT_WEIGHTS[match.courtIndex] || 1;
         const marginBonus = Math.abs((match.scoreA || 0) - (match.scoreB || 0)) / 10;
-        points += Math.round((10 + marginBonus) * courtMultiplier);
+        points += Math.round((10 + marginBonus) * courtMultiplier * partnerMultiplier);
       }
     } else {
       losses++;
       if (scoringSystem === 'simple') {
-        points -= 1;
+        points -= 1 * partnerMultiplier;
       } else if (scoringSystem === 'smart') {
         const courtMultiplier = SMART_COURT_WEIGHTS[match.courtIndex] || 1;
-        points += Math.round(-2 * courtMultiplier);
+        points += Math.round(-2 * courtMultiplier * partnerMultiplier);
       }
       // 'court' scoring doesn't deduct for losses
     }
@@ -76,13 +86,14 @@ export function calculatePlayerDayPerformance(playerId, matches, scoringSystem =
  * @param {Array} courtPlayers - Array of player IDs on the court
  * @param {Array} matches - All matches from the event day
  * @param {string} scoringSystem - Scoring system to use
+ * @param {Object} options - Options object with partners, leagueMode
  * @returns {Array} Sorted array of { playerId, rank, performance }
  */
-export function calculateCourtRankings(courtPlayers, matches, scoringSystem = 'simple') {
+export function calculateCourtRankings(courtPlayers, matches, scoringSystem = 'simple', options = {}) {
   // Calculate performance for each player
   const performances = courtPlayers.map(playerId => ({
     playerId,
-    performance: calculatePlayerDayPerformance(playerId, matches, scoringSystem)
+    performance: calculatePlayerDayPerformance(playerId, matches, scoringSystem, options)
   }));
 
   // Sort by points (desc), then wins (desc), then point differential (desc)
@@ -117,12 +128,123 @@ export function calculateCourtRankings(courtPlayers, matches, scoringSystem = 's
  * Determine movement for players based on their court rankings
  * @param {number} courtIndex - Current court index (0-3)
  * @param {Array} rankedPlayers - Sorted array from calculateCourtRankings
+ * @param {Object} options - Options object with partners, leagueMode, round1Matches
  * @returns {Array} Array of { playerId, currentCourt, nextCourt, movement }
  */
-export function determineCourtMovement(courtIndex, rankedPlayers) {
+export function determineCourtMovement(courtIndex, rankedPlayers, options = {}) {
+  const { partners = {}, leagueMode = 'regular', round1Matches = [] } = options;
   const movements = [];
   const numPlayers = rankedPlayers.length;
 
+  // For mixed doubles, check Round 1 results for partner movement
+  if (leagueMode === 'mixed_doubles' && round1Matches.length > 0) {
+    const round1Match = round1Matches.find(m => m.courtIndex === courtIndex && m.roundNumber === 1);
+    
+    if (round1Match && round1Match.status === 'completed') {
+      // Check which team won in Round 1
+      const winningTeam = round1Match.winner === 'A' ? round1Match.teamA : round1Match.teamB;
+      const losingTeam = round1Match.winner === 'A' ? round1Match.teamB : round1Match.teamA;
+      
+      // Check if winning/losing teams contain partners
+      const winningPartners = [];
+      const losingPartners = [];
+      
+      winningTeam.forEach(playerId => {
+        const partnerId = partners[playerId];
+        if (partnerId && winningTeam.includes(partnerId)) {
+          if (!winningPartners.includes(playerId) && !winningPartners.includes(partnerId)) {
+            winningPartners.push(playerId, partnerId);
+          }
+        }
+      });
+      
+      losingTeam.forEach(playerId => {
+        const partnerId = partners[playerId];
+        if (partnerId && losingTeam.includes(partnerId)) {
+          if (!losingPartners.includes(playerId) && !losingPartners.includes(partnerId)) {
+            losingPartners.push(playerId, partnerId);
+          }
+        }
+      });
+      
+      // Create movements for partners based on Round 1 result
+      const partnerMovements = new Map();
+      
+      // Winning partners move up together
+      if (winningPartners.length >= 2) {
+        const canMoveUp = courtIndex < 3;
+        winningPartners.forEach(playerId => {
+          partnerMovements.set(playerId, {
+            playerId,
+            currentCourt: courtIndex,
+            nextCourt: canMoveUp ? courtIndex + 1 : courtIndex,
+            movement: canMoveUp ? 'up' : 'stay',
+            rank: rankedPlayers.findIndex(r => r.playerId === playerId) + 1,
+            performance: rankedPlayers.find(r => r.playerId === playerId)?.performance
+          });
+        });
+      }
+      
+      // Losing partners move down together
+      if (losingPartners.length >= 2) {
+        const canMoveDown = courtIndex > 0;
+        losingPartners.forEach(playerId => {
+          partnerMovements.set(playerId, {
+            playerId,
+            currentCourt: courtIndex,
+            nextCourt: canMoveDown ? courtIndex - 1 : courtIndex,
+            movement: canMoveDown ? 'down' : 'stay',
+            rank: rankedPlayers.findIndex(r => r.playerId === playerId) + 1,
+            performance: rankedPlayers.find(r => r.playerId === playerId)?.performance
+          });
+        });
+      }
+      
+      // For players not in partner pairs, use normal ranking logic
+      rankedPlayers.forEach((player, index) => {
+        if (!partnerMovements.has(player.playerId)) {
+          let nextCourt = courtIndex;
+          let movement = 'stay';
+
+          if (numPlayers >= 5) {
+            if (index < 2 && courtIndex < 3) {
+              nextCourt = courtIndex + 1;
+              movement = 'up';
+            } else if (index >= numPlayers - 2 && courtIndex > 0) {
+              nextCourt = courtIndex - 1;
+              movement = 'down';
+            }
+          } else if (numPlayers === 4) {
+            if (index < 2 && courtIndex < 3) {
+              nextCourt = courtIndex + 1;
+              movement = 'up';
+            } else if (courtIndex > 0) {
+              nextCourt = courtIndex - 1;
+              movement = 'down';
+            }
+          }
+
+          movements.push({
+            playerId: player.playerId,
+            currentCourt: courtIndex,
+            nextCourt,
+            movement,
+            rank: player.rank,
+            performance: player.performance
+          });
+        }
+      });
+      
+      // Add partner movements
+      partnerMovements.forEach(movement => {
+        movements.push(movement);
+      });
+      
+      return movements;
+    }
+  }
+
+  // Regular movement logic (for non-mixed-doubles or if Round 1 not completed)
   rankedPlayers.forEach((player, index) => {
     let nextCourt = courtIndex;
     let movement = 'stay';
@@ -175,9 +297,10 @@ export function determineCourtMovement(courtIndex, rankedPlayers) {
  * @param {Array} courtAssignments - Array of 4 arrays with player IDs
  * @param {Array} matches - All completed matches from the event day
  * @param {string} scoringSystem - Scoring system used
+ * @param {Object} options - Options object with partners, leagueMode
  * @returns {Object} { movements, courtRankings }
  */
-export function calculateLadderMovement(courtAssignments, matches, scoringSystem = 'simple') {
+export function calculateLadderMovement(courtAssignments, matches, scoringSystem = 'simple', options = {}) {
   const allMovements = [];
   const courtRankings = [];
 
@@ -190,12 +313,20 @@ export function calculateLadderMovement(courtAssignments, matches, scoringSystem
     // Get court-specific matches
     const courtMatches = matches.filter(m => m.courtIndex === courtIndex);
     
+    // Get Round 1 match for partner movement logic (mixed doubles)
+    const round1Matches = options.leagueMode === 'mixed_doubles' 
+      ? matches.filter(m => m.roundNumber === 1)
+      : [];
+    
     // Calculate rankings for this court
-    const rankings = calculateCourtRankings(courtPlayers, courtMatches, scoringSystem);
+    const rankings = calculateCourtRankings(courtPlayers, courtMatches, scoringSystem, options);
     courtRankings.push(rankings);
 
-    // Determine movement
-    const movements = determineCourtMovement(courtIndex, rankings);
+    // Determine movement (pass Round 1 matches for partner movement logic)
+    const movements = determineCourtMovement(courtIndex, rankings, {
+      ...options,
+      round1Matches
+    });
     allMovements.push(...movements);
   });
 

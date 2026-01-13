@@ -80,7 +80,17 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     }
 
     // Generate round-robin schedule for all courts
-    const schedule = generateEventDaySchedule(courtAssignments);
+    // For mixed doubles, pass partners and getPlayerGender function
+    const getPlayerGender = (playerId) => {
+      const player = league.registeredPlayers.find(p => p.id === playerId);
+      return player?.gender || null;
+    };
+    
+    const schedule = generateEventDaySchedule(courtAssignments, {
+      leagueMode: league.leagueMode || 'regular',
+      partners: league.partners || {},
+      getPlayerGender
+    });
 
     updateEventDay(currentEventDay.id, {
       status: EVENT_DAY_STATUS.ACTIVE,
@@ -163,7 +173,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     const { movements, courtRankings } = calculateLadderMovement(
       currentEventDay.courtAssignments,
       currentEventDay.schedule,
-      league.scoringSystem
+      league.scoringSystem,
+      {
+        leagueMode: league.leagueMode || 'regular',
+        partners: league.partners || {}
+      }
     );
 
     // Update player stats from League Round
@@ -172,7 +186,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         const performance = calculatePlayerDayPerformance(
           playerId,
           currentEventDay.schedule,
-          league.scoringSystem
+          league.scoringSystem,
+          {
+            leagueMode: league.leagueMode || 'regular',
+            partners: league.partners || {}
+          }
         );
 
         updatePlayerStats(playerId, {
@@ -197,6 +215,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     currentEventDay,
     allMatchesCompleted,
     league.scoringSystem,
+    league.leagueMode,
+    league.partners,
     updatePlayerStats,
     updateEventDay
   ]);
@@ -361,7 +381,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     const { movements, courtRankings } = calculateLadderMovement(
       currentEventDay.courtAssignments,
       currentEventDay.schedule,
-      league.scoringSystem
+      league.scoringSystem,
+      {
+        leagueMode: league.leagueMode || 'regular',
+        partners: league.partners || {}
+      }
     );
 
     return {
@@ -376,7 +400,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         }))
       )
     };
-  }, [currentEventDay, allMatchesCompleted, league.scoringSystem, getPlayerById]);
+  }, [currentEventDay, allMatchesCompleted, league.scoringSystem, league.leagueMode, league.partners, getPlayerById]);
 
   // Get unique rounds in schedule
   const rounds = useMemo(() => {

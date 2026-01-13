@@ -56,3 +56,14 @@ export const MONEY_ROUND_DEFAULTS = {
   }
 };
 
+// League Mode Constants
+export const LEAGUE_MODE = {
+  REGULAR: 'regular',
+  MIXED_DOUBLES: 'mixed_doubles'
+};
+
+// Gender Constants
+export const GENDER = {
+  MALE: 'male',
+  FEMALE: 'female'
+};

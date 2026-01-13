@@ -8,7 +8,9 @@ export default function LeagueCourts({
   getPlayerById,
   onRecordScore,
   onClearScore,
-  toast
+  toast,
+  league,
+  getPlayerPartner
 }) {
   const [expandedCourts, setExpandedCourts] = useState([0, 1, 2, 3]);
   const [pendingScores, setPendingScores] = useState({});
@@ -84,15 +86,52 @@ export default function LeagueCourts({
     const team2Names = match.teamB.map(id => getPlayerName(id)).join(' & ');
     const sittingOutName = match.sittingOut ? getPlayerName(match.sittingOut) : null;
 
+    // Check if playing with partner (for mixed doubles)
+    const isMixedDoubles = league?.leagueMode === 'mixed_doubles';
+    const teamAWithPartner = isMixedDoubles && match.teamA.length === 2 && 
+      (match.playedWithPartner || (getPlayerPartner && (
+        getPlayerPartner(match.teamA[0]) === match.teamA[1] || 
+        getPlayerPartner(match.teamA[1]) === match.teamA[0]
+      )));
+    const teamBWithPartner = isMixedDoubles && match.teamB.length === 2 && 
+      (match.playedWithPartner || (getPlayerPartner && (
+        getPlayerPartner(match.teamB[0]) === match.teamB[1] || 
+        getPlayerPartner(match.teamB[1]) === match.teamB[0]
+      )));
+
     return (
       <div key={match.id} className={`match-card ${isCompleted ? 'completed' : ''}`}>
         <div className="match-teams">
           <div className="match-team">
-            <div className="team-players">{team1Names}</div>
+            <div className="team-players">
+              {team1Names}
+              {teamAWithPartner && (
+                <span style={{ 
+                  marginLeft: '8px',
+                  fontSize: '11px',
+                  color: 'var(--success)',
+                  fontWeight: '600'
+                }} title="Playing with assigned partner (2 points)">
+                  👥 Partner
+                </span>
+              )}
+            </div>
           </div>
           <div className="match-vs">VS</div>
           <div className="match-team">
-            <div className="team-players">{team2Names}</div>
+            <div className="team-players">
+              {team2Names}
+              {teamBWithPartner && (
+                <span style={{ 
+                  marginLeft: '8px',
+                  fontSize: '11px',
+                  color: 'var(--success)',
+                  fontWeight: '600'
+                }} title="Playing with assigned partner (2 points)">
+                  👥 Partner
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

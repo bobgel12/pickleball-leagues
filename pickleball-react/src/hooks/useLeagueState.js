@@ -15,7 +15,12 @@ import {
   getCurrentEventDay,
   canStartNewEventDay,
   downloadLeagueExport,
-  importLeagueFromJSON
+  importLeagueFromJSON,
+  getPartner,
+  setPartner,
+  validatePartnership,
+  autoAssignPartners,
+  canChangePartners
 } from '../utils/leagueStorage.js';
 import { LEAGUE_STATUS, EVENT_DAY_STATUS, DEFAULT_DUPR_RATING } from '../utils/constants.js';
 
@@ -92,9 +97,9 @@ export function useLeagueState() {
   }, []);
 
   // Register a new player
-  const registerPlayer = useCallback((name, duprRating = DEFAULT_DUPR_RATING) => {
+  const registerPlayer = useCallback((name, duprRating = DEFAULT_DUPR_RATING, gender = null) => {
     const id = generatePlayerId();
-    const player = createLeaguePlayer(id, name, duprRating);
+    const player = createLeaguePlayer(id, name, duprRating, gender);
     
     setLeague(prev => {
       if (prev.registeredPlayers.length >= prev.maxPlayers) {
@@ -116,7 +121,7 @@ export function useLeagueState() {
       const availableSlots = prev.maxPlayers - prev.registeredPlayers.length;
       const newPlayers = players.slice(0, availableSlots).map((p, index) => {
         const id = playerIdCounter + index;
-        return createLeaguePlayer(id, p.name, p.duprRating || DEFAULT_DUPR_RATING);
+        return createLeaguePlayer(id, p.name, p.duprRating || DEFAULT_DUPR_RATING, p.gender || null);
       });
       
       setPlayerIdCounter(prev => prev + newPlayers.length);
@@ -568,6 +573,62 @@ export function useLeagueState() {
     }));
   }, []);
 
+  // ==========================================
+  // PARTNER MANAGEMENT (Mixed Doubles)
+  // ==========================================
+
+  // Get partner for a player
+  const getPlayerPartner = useCallback((playerId) => {
+    return getPartner(league, playerId);
+  }, [league]);
+
+  // Set partner for two players
+  const assignPartner = useCallback((playerId1, playerId2) => {
+    const validation = validatePartnership(league, playerId1, playerId2);
+    if (!validation.valid) {
+      console.warn('Invalid partnership:', validation.error);
+      return false;
+    }
+
+    const changeCheck = canChangePartners(league);
+    if (!changeCheck.canChange) {
+      console.warn('Cannot change partners:', changeCheck.reason);
+      return false;
+    }
+
+    setLeague(prev => setPartner(prev, playerId1, playerId2));
+    return true;
+  }, [league]);
+
+  // Remove partner for a player
+  const removePartner = useCallback((playerId) => {
+    const changeCheck = canChangePartners(league);
+    if (!changeCheck.canChange) {
+      console.warn('Cannot change partners:', changeCheck.reason);
+      return false;
+    }
+
+    setLeague(prev => setPartner(prev, playerId, null));
+    return true;
+  }, [league]);
+
+  // Auto-assign partners based on ladder position
+  const autoAssignPartnersToLeague = useCallback(() => {
+    const changeCheck = canChangePartners(league);
+    if (!changeCheck.canChange) {
+      console.warn('Cannot change partners:', changeCheck.reason);
+      return false;
+    }
+
+    setLeague(prev => autoAssignPartners(prev));
+    return true;
+  }, [league]);
+
+  // Check if partners can be changed
+  const canModifyPartners = useCallback(() => {
+    return canChangePartners(league);
+  }, [league]);
+
   return {
     league,
     currentEventDay,
@@ -610,7 +671,14 @@ export function useLeagueState() {
     getTotalUnpaid,
     getPlayerBalance,
     getEventDayContributions,
-    updatePlayerMoneyRoundStats
+    updatePlayerMoneyRoundStats,
+
+    // Partner Management (Mixed Doubles)
+    getPlayerPartner,
+    assignPartner,
+    removePartner,
+    autoAssignPartnersToLeague,
+    canModifyPartners
   };
 }
 

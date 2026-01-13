@@ -621,6 +621,11 @@ function App() {
             onResetLeague={leagueState.resetLeague}
             onNavigate={handleLeagueNavigate}
             toast={toast}
+            onAssignPartner={leagueState.assignPartner}
+            onRemovePartner={leagueState.removePartner}
+            onAutoAssignPartners={leagueState.autoAssignPartnersToLeague}
+            canModifyPartners={leagueState.canModifyPartners()}
+            getPlayerPartner={leagueState.getPlayerPartner}
           />
         );
       case 'eventDay':

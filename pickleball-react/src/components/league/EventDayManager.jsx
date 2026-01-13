@@ -169,6 +169,11 @@ export default function EventDayManager({
               onRecordScore={onRecordScore}
               onClearScore={onClearScore}
               toast={toast}
+              league={league}
+              getPlayerPartner={(playerId) => {
+                const partnerId = league.partners?.[playerId];
+                return partnerId || null;
+              }}
             />
           </section>
 
