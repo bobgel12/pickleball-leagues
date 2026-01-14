@@ -777,7 +777,7 @@
   bottom: 0;
   width: 520px;
   max-width: 100%;
-  background: var(--bg);
+  background: white;
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
   z-index: 1000;
   overflow-y: auto;
@@ -798,7 +798,7 @@
 
 .player-profile-header {
   padding: 28px;
-  background: var(--surface);
+  background: white;
   border-bottom: 1px solid var(--border);
 }
 
