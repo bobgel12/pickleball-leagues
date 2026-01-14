@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users } from 'lucide-react';
+import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut } from 'lucide-react';
+import { useClub } from '../hooks/useClub';
 
 export default function Header({ 
   tournaments, 
@@ -12,6 +13,7 @@ export default function Header({
   activeSection,
   onSectionChange 
 }) {
+  const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
   
   // Ensure we have a valid activeTournamentId value for the select
@@ -30,15 +32,35 @@ export default function Header({
 
   return (
     <header>
-      <h1>
-        Pickleball League
-        {activeSection === 'tournaments' && currentTournament && (
-          <span id="tournamentNameDisplay">— {currentTournament.name}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <h1>
+          Pickleball League
+          {activeSection === 'tournaments' && currentTournament && (
+            <span id="tournamentNameDisplay">— {currentTournament.name}</span>
+          )}
+          {activeSection === 'league' && (
+            <span id="tournamentNameDisplay">— Ladder League</span>
+          )}
+        </h1>
+        {club && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+            <span className="pill" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Building2 size={12} />
+              {club.name}
+            </span>
+            <button
+              className="btn"
+              onClick={clearClub}
+              type="button"
+              title="Switch Club"
+              style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+            >
+              <LogOut size={14} />
+              Switch Club
+            </button>
+          </div>
         )}
-        {activeSection === 'league' && (
-          <span id="tournamentNameDisplay">— Ladder League</span>
-        )}
-      </h1>
+      </div>
 
       {/* Section Tabs */}
       {onSectionChange && (
@@ -101,10 +123,21 @@ export default function Header({
         </div>
       )}
 
-      <span className="pill">
-        <WifiOff size={12} />
-        Offline • Cookies (localStorage fallback)
-      </span>
+      {typeof navigator !== 'undefined' && (
+        <span className="pill">
+          {navigator.onLine ? (
+            <>
+              <Wifi size={12} />
+              Online
+            </>
+          ) : (
+            <>
+              <WifiOff size={12} />
+              Offline (localStorage only)
+            </>
+          )}
+        </span>
+      )}
       <span className="pill">
         <Activity size={12} />
         4 Courts

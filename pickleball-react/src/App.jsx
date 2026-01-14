@@ -8,7 +8,9 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
 import { useLeagueState } from './hooks/useLeagueState';
 import { useEventDay } from './hooks/useEventDay';
+import { useClub } from './hooks/useClub';
 import ConfirmDialog from './components/ConfirmDialog';
+import ClubSelector from './components/ClubSelector';
 import { parseScore, parseCSV } from './utils/csvParser';
 import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
 import {
@@ -48,6 +50,7 @@ import {
 import './styles/League.css';
 
 function App() {
+  const { clubSlug, isClubSelected, loading: clubLoading } = useClub();
   const appState = useAppState();
   const tournament = useTournament(appState);
   const { exportState } = useStorage(appState.state);
@@ -599,8 +602,24 @@ function App() {
   const showLeaderboard = appState.currentTournament?.matchLimit &&
     appState.currentTournament.matchesPlayed >= appState.currentTournament.matchLimit;
 
-  if (!appState.currentTournament) {
-    return <div>Loading...</div>;
+  // Show club selector if no club is selected
+  if (!isClubSelected) {
+    return <ClubSelector />;
+  }
+
+  // Show loading state while club data is being fetched
+  if (clubLoading || !appState.currentTournament) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: '100vh',
+        color: 'var(--text-primary)'
+      }}>
+        Loading club data...
+      </div>
+    );
   }
 
   // Render League Section

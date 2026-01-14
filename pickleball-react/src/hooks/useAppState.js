@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Storage } from '../utils/storage.js';
+import { loadTournamentData, saveTournamentData } from '../utils/apiStorage.js';
 import { createDefaultState, normalizeStateStructure, generateTournamentName, createDefaultTournament } from '../utils/helpers.js';
 
 export function useAppState() {
   const [state, setState] = useState(() => {
-    const loaded = Storage.load();
-    if (loaded) {
-      return normalizeStateStructure(loaded);
-    }
+    // Start with default state, will load from API if club is selected
     const defaultState = createDefaultState();
     if (defaultState.tournaments.length === 0) {
       const firstTournament = createDefaultTournament({ id: 1, name: "Tournament 1" });
@@ -17,10 +15,69 @@ export function useAppState() {
     return defaultState;
   });
 
-  // Auto-save on state changes
+  const [isLoading, setIsLoading] = useState(true);
+  const saveTimeoutRef = useRef(null);
+
+  // Load from API on mount
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        const loaded = await loadTournamentData();
+        if (loaded) {
+          const normalized = normalizeStateStructure(loaded);
+          setState(normalized);
+        } else {
+          // Fallback to localStorage if no API data
+          const localData = Storage.load();
+          if (localData) {
+            const normalized = normalizeStateStructure(localData);
+            setState(normalized);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading tournament data:', error);
+        // Fallback to localStorage
+        const localData = Storage.load();
+        if (localData) {
+          const normalized = normalizeStateStructure(localData);
+          setState(normalized);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Auto-save on state changes (debounced)
+  useEffect(() => {
+    if (isLoading) return; // Don't save during initial load
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Save to localStorage immediately (fallback)
     Storage.save(state);
-  }, [state]);
+
+    // Debounce API save to avoid too many requests
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveTournamentData(state);
+      } catch (error) {
+        console.error('Error saving tournament data to API:', error);
+        // localStorage already saved as fallback
+      }
+    }, 1000); // 1 second debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [state, isLoading]);
 
   const ensureActiveTournament = useCallback(() => {
     setState(prev => {

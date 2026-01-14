@@ -1,0 +1,225 @@
+.club-selector {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+  background: var(--bg-primary);
+}
+
+.club-selector-container {
+  width: 100%;
+  max-width: 500px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: calc(var(--pad) * 2);
+  box-shadow: var(--shadow-lg);
+}
+
+.club-selector-header {
+  text-align: center;
+  margin-bottom: calc(var(--pad) * 2);
+}
+
+.club-icon {
+  color: var(--primary);
+  margin-bottom: var(--pad);
+}
+
+.club-selector-header h1 {
+  margin: 0 0 var(--pad) 0;
+  font-size: 1.75rem;
+  color: var(--text-primary);
+}
+
+.club-selector-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.club-selector-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--gap) / 2);
+}
+
+.form-group label {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-group input,
+.form-group textarea {
+  padding: calc(var(--pad) * 0.75);
+  border: 1px solid var(--border-medium);
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: all var(--transition-base);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.form-group input.error,
+.form-group textarea.error {
+  border-color: var(--error);
+}
+
+.form-group input:disabled,
+.form-group textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-hint {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  margin-top: calc(var(--gap) / 4);
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  font-weight: normal;
+}
+
+.btn-link:hover:not(:disabled) {
+  color: var(--primary-hover);
+}
+
+.btn-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: var(--pad);
+}
+
+.form-actions .btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--gap) / 2);
+  padding: calc(var(--pad) * 0.875) var(--pad);
+  border: none;
+  border-radius: calc(var(--radius) * 0.75);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--text-inverse);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-dark);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--gap) / 2);
+  padding: var(--pad);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: calc(var(--radius) * 0.75);
+  color: var(--error);
+  font-size: 0.9rem;
+}
+
+.success-message {
+  text-align: center;
+  padding: calc(var(--pad) * 2);
+}
+
+.success-icon {
+  color: var(--success);
+  margin-bottom: var(--pad);
+}
+
+.success-message h2 {
+  color: var(--text-primary);
+  margin: var(--pad) 0;
+}
+
+.success-message p {
+  color: var(--text-secondary);
+}
+
+.club-selector-info {
+  margin-top: calc(var(--pad) * 2);
+  padding: var(--pad);
+  background: var(--bg-tertiary);
+  border-radius: calc(var(--radius) * 0.75);
+  border: 1px solid var(--border-light);
+}
+
+.club-selector-info p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .club-selector-container {
+  border: 1px solid var(--border-medium);
+}
+
+[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group textarea:focus {
+  box-shadow: 0 0 0 3px var(--primary-light);
+}

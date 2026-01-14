@@ -2,7 +2,7 @@
  * useLeagueState - State management hook for Ladder League
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   saveLeague,
   loadLeague,
@@ -22,36 +22,110 @@ import {
   autoAssignPartners,
   canChangePartners
 } from '../utils/leagueStorage.js';
+import { loadLeagueData, saveLeagueData } from '../utils/apiStorage.js';
 import { LEAGUE_STATUS, EVENT_DAY_STATUS, DEFAULT_DUPR_RATING } from '../utils/constants.js';
 
 export function useLeagueState() {
   const [league, setLeague] = useState(() => {
-    const loaded = loadLeague();
-    return loaded || createDefaultLeague();
+    // Start with default, will load from API if club is selected
+    return createDefaultLeague();
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const saveTimeoutRef = useRef(null);
+
   const [playerIdCounter, setPlayerIdCounter] = useState(() => {
-    const loaded = loadLeague();
-    if (loaded && loaded.registeredPlayers.length > 0) {
-      const maxId = Math.max(...loaded.registeredPlayers.map(p => p.id));
-      return maxId + 1;
-    }
     return 1;
   });
 
   const [eventDayIdCounter, setEventDayIdCounter] = useState(() => {
-    const loaded = loadLeague();
-    if (loaded && loaded.eventDays.length > 0) {
-      const maxId = Math.max(...loaded.eventDays.map(d => d.id));
-      return maxId + 1;
-    }
     return 1;
   });
 
-  // Auto-save on league changes
+  // Load from API on mount
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        const loaded = await loadLeagueData();
+        if (loaded) {
+          const normalized = normalizeLeagueState(loaded);
+          setLeague(normalized);
+          
+          // Update counters
+          if (normalized.registeredPlayers.length > 0) {
+            const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
+            setPlayerIdCounter(maxPlayerId + 1);
+          }
+          if (normalized.eventDays.length > 0) {
+            const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
+            setEventDayIdCounter(maxDayId + 1);
+          }
+        } else {
+          // Fallback to localStorage
+          const localData = loadLeague();
+          if (localData) {
+            setLeague(localData);
+            if (localData.registeredPlayers.length > 0) {
+              const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
+              setPlayerIdCounter(maxId + 1);
+            }
+            if (localData.eventDays.length > 0) {
+              const maxId = Math.max(...localData.eventDays.map(d => d.id));
+              setEventDayIdCounter(maxId + 1);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading league data:', error);
+        // Fallback to localStorage
+        const localData = loadLeague();
+        if (localData) {
+          setLeague(localData);
+          if (localData.registeredPlayers.length > 0) {
+            const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
+            setPlayerIdCounter(maxId + 1);
+          }
+          if (localData.eventDays.length > 0) {
+            const maxId = Math.max(...localData.eventDays.map(d => d.id));
+            setEventDayIdCounter(maxId + 1);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Auto-save on league changes (debounced)
+  useEffect(() => {
+    if (isLoading) return; // Don't save during initial load
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Save to localStorage immediately (fallback)
     saveLeague(league);
-  }, [league]);
+
+    // Debounce API save to avoid too many requests
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveLeagueData(league);
+      } catch (error) {
+        console.error('Error saving league data to API:', error);
+        // localStorage already saved as fallback
+      }
+    }, 1000); // 1 second debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [league, isLoading]);
 
   // Generate unique player ID
   const generatePlayerId = useCallback(() => {
