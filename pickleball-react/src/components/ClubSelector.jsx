@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useClub } from '../hooks/useClub';
-import { registerClub } from '../utils/apiStorage.js';
+import { registerClub, getApiBase } from '../utils/apiStorage.js';
 import ClubRegistration from './ClubRegistration';
 import { Building2, LogIn, PlusCircle, AlertCircle } from 'lucide-react';
 import '../styles/ClubSelector.css';
@@ -23,9 +23,7 @@ export default function ClubSelector() {
     setErrorMessage('');
 
     try {
-      const apiUrl = typeof window !== 'undefined'
-        ? `${window.location.origin}/api/clubs/${inputSlug.trim()}`
-        : `/api/clubs/${inputSlug.trim()}`;
+      const apiUrl = `${getApiBase()}/${inputSlug.trim()}`;
       const response = await fetch(apiUrl);
       if (response.ok) {
         const { club } = await response.json();

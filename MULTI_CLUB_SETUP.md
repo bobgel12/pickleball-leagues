@@ -45,9 +45,24 @@ This guide will help you set up the multi-club database support for the Pickleba
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Staging API URL (highest priority)
+# If set, all API calls will go to staging environment
+# Example: VITE_STAGING_API_URL=https://your-app-staging.vercel.app
+# Leave unset to use other options below
+
+# Production/Override API URL (fallback if staging not set)
+# If set, local dev will use this API instead of local API routes
+# Example: VITE_API_BASE_URL=https://your-app.vercel.app
+# Leave unset to use local API (requires vercel dev) or current origin
 ```
 
 2. **Important:** The `SUPABASE_SERVICE_ROLE_KEY` should NOT be in `.env.local` as it's server-side only. It will be set in Vercel.
+
+3. **API URL Priority:** The app checks for API URLs in this order:
+   - `VITE_STAGING_API_URL` (highest priority - for staging environment)
+   - `VITE_API_BASE_URL` (fallback - for production or override)
+   - Current origin (default - works with `vercel dev` or in production)
 
 ### For Vercel Deployment
 
@@ -108,20 +123,34 @@ vercel dev
 
 5. This will start both the frontend and API routes. The app will be available at the URL shown (usually `http://localhost:3000`)
 
-### Option B: Using Vite Dev Server (Frontend Only)
+### Option B: Using Vite Dev Server with Staging/Production API
 
-If you only want to test the frontend without API routes:
+If you want to use staging or production API during local development:
 
-1. Start the development server:
+1. Set `VITE_STAGING_API_URL` (for staging) or `VITE_API_BASE_URL` (for production) in your `.env.local` file (see Step 4):
+```env
+# For staging (recommended)
+VITE_STAGING_API_URL=https://your-app-staging.vercel.app
+
+# OR for production
+VITE_API_BASE_URL=https://your-app.vercel.app
+```
+
+2. Start the development server:
 ```bash
 cd pickleball-react
 npm run dev
 ```
 
-2. **Note:** API routes will return 404 errors in this mode. You'll need to either:
-   - Use Vercel CLI (Option A) for full functionality
+3. **Note:** With `VITE_STAGING_API_URL` or `VITE_API_BASE_URL` set, all API calls will go to the specified environment. This is useful for:
+   - Testing against staging/production data
+   - Developing without needing to run `vercel dev`
+   - Faster development workflow (no need for local API routes)
+
+**Alternative:** If neither environment variable is set, API routes will return 404 errors in this mode. You'll need to either:
+   - Use Vercel CLI (Option A) for full functionality with local API routes
+   - Set `VITE_STAGING_API_URL` or `VITE_API_BASE_URL` to use remote API
    - Deploy to Vercel to test API routes
-   - Set up a local proxy (see below)
 
 ### Testing the Setup
 

@@ -5,9 +5,28 @@
 
 /**
  * Get the API base URL - use absolute path to bypass /app/ base path
+ * Priority: VITE_STAGING_API_URL > VITE_API_BASE_URL > current origin
  */
-function getApiBase() {
+export function getApiBase() {
   if (typeof window !== 'undefined') {
+    // Check if staging API URL is configured (highest priority)
+    const stagingApiUrl = import.meta.env.VITE_STAGING_API_URL;
+    if (stagingApiUrl) {
+      // Ensure it ends with /api/clubs
+      return stagingApiUrl.endsWith('/api/clubs') 
+        ? stagingApiUrl 
+        : `${stagingApiUrl.replace(/\/$/, '')}/api/clubs`;
+    }
+    
+    // Check if production/override API URL is configured
+    const prodApiUrl = import.meta.env.VITE_API_BASE_URL;
+    if (prodApiUrl) {
+      // Ensure it ends with /api/clubs
+      return prodApiUrl.endsWith('/api/clubs') 
+        ? prodApiUrl 
+        : `${prodApiUrl.replace(/\/$/, '')}/api/clubs`;
+    }
+    
     // Use absolute URL from origin to bypass Vite's base path
     return `${window.location.origin}/api/clubs`;
   }

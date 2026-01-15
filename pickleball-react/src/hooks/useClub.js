@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBase } from '../utils/apiStorage.js';
 
 const CLUB_SLUG_KEY = 'pickleball_club_slug';
 
@@ -28,9 +29,7 @@ export function useClub() {
       setLoading(true);
       setError(null);
       try {
-        const apiUrl = typeof window !== 'undefined' 
-          ? `${window.location.origin}/api/clubs/${clubSlug}`
-          : `/api/clubs/${clubSlug}`;
+        const apiUrl = `${getApiBase()}/${clubSlug}`;
         const response = await fetch(apiUrl);
         if (!response.ok) {
           if (response.status === 404) {

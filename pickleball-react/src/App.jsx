@@ -93,6 +93,13 @@ function App() {
   const [leagueView, setLeagueView] = useState('dashboard');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
+  // Redirect from admin-only views when not in admin mode
+  useEffect(() => {
+    if (!adminAuth.isAdmin && (leagueView === 'setup' || leagueView === 'eventDay')) {
+      setLeagueView('dashboard');
+    }
+  }, [adminAuth.isAdmin, leagueView]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     'Escape': () => {
@@ -656,15 +663,6 @@ function App() {
 
   // Render League Section
   const renderLeagueSection = () => {
-    // Hide setup and eventDay in viewer mode
-    if (!adminAuth.isAdmin && (leagueView === 'setup' || leagueView === 'eventDay')) {
-      // Redirect to dashboard if trying to access admin-only views
-      if (leagueView !== 'dashboard') {
-        setLeagueView('dashboard');
-      }
-      return null;
-    }
-
     switch (leagueView) {
       case 'setup':
         if (!adminAuth.isAdmin) return null;
