@@ -4,7 +4,22 @@ import bcrypt from 'bcryptjs';
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// CORS headers helper
+function setCorsHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
 export default async function handler(req, res) {
+  // Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    setCorsHeaders(res);
+    return res.status(200).end();
+  }
+
+  setCorsHeaders(res);
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
