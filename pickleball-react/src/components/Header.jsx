@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut } from 'lucide-react';
+import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut, Lock, Shield } from 'lucide-react';
 import { useClub } from '../hooks/useClub';
 
 export default function Header({ 
@@ -11,7 +11,10 @@ export default function Header({
   theme, 
   onToggleTheme,
   activeSection,
-  onSectionChange 
+  onSectionChange,
+  isAdmin = false,
+  onEnterAdminMode,
+  onExitAdminMode
 }) {
   const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
@@ -48,6 +51,43 @@ export default function Header({
               <Building2 size={12} />
               {club.name}
             </span>
+            {isAdmin && (
+              <span className="pill" style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                background: 'var(--success-bg)',
+                borderColor: 'var(--success-border)',
+                color: 'var(--success-text)'
+              }}>
+                <Shield size={12} />
+                Admin Mode
+              </span>
+            )}
+            {!isAdmin && onEnterAdminMode && (
+              <button
+                className="btn"
+                onClick={onEnterAdminMode}
+                type="button"
+                title="Enter Admin Mode"
+                style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+              >
+                <Lock size={14} />
+                Enter Admin Mode
+              </button>
+            )}
+            {isAdmin && onExitAdminMode && (
+              <button
+                className="btn warn"
+                onClick={onExitAdminMode}
+                type="button"
+                title="Exit Admin Mode"
+                style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+              >
+                <LogOut size={14} />
+                Exit Admin Mode
+              </button>
+            )}
             <button
               className="btn"
               onClick={clearClub}
@@ -62,16 +102,18 @@ export default function Header({
         )}
       </div>
 
-      {/* Section Tabs */}
+      {/* Section Tabs - Only show Tournaments tab in admin mode */}
       {onSectionChange && (
         <div className="section-tabs" style={{ margin: '12px 0' }}>
-          <button
-            className={`section-tab ${activeSection === 'tournaments' ? 'active' : ''}`}
-            onClick={() => onSectionChange('tournaments')}
-          >
-            <Trophy size={16} />
-            Tournaments
-          </button>
+          {isAdmin && (
+            <button
+              className={`section-tab ${activeSection === 'tournaments' ? 'active' : ''}`}
+              onClick={() => onSectionChange('tournaments')}
+            >
+              <Trophy size={16} />
+              Tournaments
+            </button>
+          )}
           <button
             className={`section-tab ${activeSection === 'league' ? 'active' : ''}`}
             onClick={() => onSectionChange('league')}

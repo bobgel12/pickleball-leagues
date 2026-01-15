@@ -9,7 +9,9 @@ import { useConfirmDialog } from './hooks/useConfirmDialog';
 import { useLeagueState } from './hooks/useLeagueState';
 import { useEventDay } from './hooks/useEventDay';
 import { useClub } from './hooks/useClub';
+import { useAdminAuth } from './hooks/useAdminAuth';
 import ConfirmDialog from './components/ConfirmDialog';
+import AdminLoginModal from './components/AdminLoginModal';
 import ClubSelector from './components/ClubSelector';
 import { parseScore, parseCSV } from './utils/csvParser';
 import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
@@ -51,6 +53,7 @@ import './styles/League.css';
 
 function App() {
   const { clubSlug, isClubSelected, loading: clubLoading } = useClub();
+  const adminAuth = useAdminAuth(clubSlug);
   const appState = useAppState();
   const tournament = useTournament(appState);
   const { exportState } = useStorage(appState.state);
@@ -59,7 +62,22 @@ function App() {
   const confirmDialog = useConfirmDialog();
 
   // Section state: 'tournaments' or 'league'
-  const [activeSection, setActiveSection] = useState('tournaments');
+  // Default to 'league' if not admin (viewer mode)
+  const [activeSection, setActiveSection] = useState(() => {
+    // Will be set properly after admin auth loads
+    return 'league';
+  });
+
+  // Admin login modal state
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+
+  // Update activeSection when admin status changes
+  useEffect(() => {
+    if (!adminAuth.isAdmin && activeSection === 'tournaments') {
+      // If user is not admin and tries to access tournaments, switch to league
+      setActiveSection('league');
+    }
+  }, [adminAuth.isAdmin, activeSection]);
 
   // League state
   const leagueState = useLeagueState();
@@ -622,10 +640,34 @@ function App() {
     );
   }
 
+  // Handle admin mode entry
+  const handleEnterAdminMode = () => {
+    setShowAdminLogin(true);
+  };
+
+  const handleExitAdminMode = () => {
+    adminAuth.logoutAdmin();
+    setActiveSection('league'); // Switch to league view when exiting admin
+  };
+
+  const handleAdminLogin = async (masterKey) => {
+    return await adminAuth.loginAdmin(masterKey);
+  };
+
   // Render League Section
   const renderLeagueSection = () => {
+    // Hide setup and eventDay in viewer mode
+    if (!adminAuth.isAdmin && (leagueView === 'setup' || leagueView === 'eventDay')) {
+      // Redirect to dashboard if trying to access admin-only views
+      if (leagueView !== 'dashboard') {
+        setLeagueView('dashboard');
+      }
+      return null;
+    }
+
     switch (leagueView) {
       case 'setup':
+        if (!adminAuth.isAdmin) return null;
         return (
           <LeagueSetup
             league={leagueState.league}
@@ -648,6 +690,7 @@ function App() {
           />
         );
       case 'eventDay':
+        if (!adminAuth.isAdmin) return null;
         return (
           <EventDayManager
             league={leagueState.league}
@@ -695,6 +738,7 @@ function App() {
             getPlayerById={leagueState.getPlayerById}
             onNavigate={handleLeagueNavigate}
             toast={toast}
+            isAdmin={adminAuth.isAdmin}
           />
         );
       case 'dashboard':
@@ -711,6 +755,7 @@ function App() {
             onStartEventDay={handleStartEventDay}
             onNavigate={handleLeagueNavigate}
             onExport={leagueState.exportLeague}
+            isAdmin={adminAuth.isAdmin}
           />
         );
     }
@@ -728,6 +773,9 @@ function App() {
         onToggleTheme={toggleTheme}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
+        isAdmin={adminAuth.isAdmin}
+        onEnterAdminMode={handleEnterAdminMode}
+        onExitAdminMode={handleExitAdminMode}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <ConfirmDialog
@@ -740,9 +788,19 @@ function App() {
         onConfirm={confirmDialog.dialog.onConfirm}
         onCancel={confirmDialog.dialog.onCancel}
       />
+      <AdminLoginModal
+        isOpen={showAdminLogin}
+        onClose={() => {
+          setShowAdminLogin(false);
+          adminAuth.clearError();
+        }}
+        onLogin={handleAdminLogin}
+        isLoading={adminAuth.isLoading}
+        error={adminAuth.error}
+      />
 
-      {/* Tournament Section */}
-      {activeSection === 'tournaments' && (
+      {/* Tournament Section - Only show in admin mode */}
+      {adminAuth.isAdmin && activeSection === 'tournaments' && (
         <main>
           <PlayerManagement
             tournament={appState.currentTournament}

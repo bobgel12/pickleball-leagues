@@ -17,7 +17,8 @@ export default function PrizePoolDashboard({
   recordPayout,
   getPlayerById,
   onNavigate,
-  toast
+  toast,
+  isAdmin = false
 }) {
   const [filter, setFilter] = useState('all'); // 'all', 'unpaid', 'paid'
   const [selectedPlayer, setSelectedPlayer] = useState('');
@@ -198,14 +199,26 @@ export default function PrizePoolDashboard({
                       </div>
                     </div>
                     <div className="contribution-amount">${c.amount.toFixed(2)}</div>
-                    <button
-                      className={`btn ${c.paid ? 'success' : 'warn'}`}
-                      onClick={() => handleTogglePaid(c)}
-                      title={c.paid ? 'Mark as unpaid' : 'Mark as paid'}
-                    >
-                      {c.paid ? <CheckCircle size={16} /> : <XCircle size={16} />}
-                      {c.paid ? 'Paid' : 'Unpaid'}
-                    </button>
+                    {isAdmin ? (
+                      <button
+                        className={`btn ${c.paid ? 'success' : 'warn'}`}
+                        onClick={() => handleTogglePaid(c)}
+                        title={c.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                      >
+                        {c.paid ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                        {c.paid ? 'Paid' : 'Unpaid'}
+                      </button>
+                    ) : (
+                      <span className={`pill ${c.paid ? 'success' : 'warn'}`} style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px',
+                        padding: '6px 12px'
+                      }}>
+                        {c.paid ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                        {c.paid ? 'Paid' : 'Unpaid'}
+                      </span>
+                    )}
                   </div>
                 );
               })
@@ -250,14 +263,15 @@ export default function PrizePoolDashboard({
           </div>
         </section>
 
-        {/* Record Payout Section */}
-        <section className="card">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-            <Award size={20} />
-            Record Payout
-          </h2>
+        {/* Record Payout Section - Admin Only */}
+        {isAdmin && (
+          <section className="card">
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <Award size={20} />
+              Record Payout
+            </h2>
 
-          <div className="payout-form">
+            <div className="payout-form">
             <div className="form-group">
               <label>Player</label>
               <select 
@@ -321,7 +335,32 @@ export default function PrizePoolDashboard({
               </div>
             </div>
           )}
-        </section>
+          </section>
+        )}
+
+        {/* Payout History - Show in viewer mode too */}
+        {!isAdmin && payouts.length > 0 && (
+          <section className="card">
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <Award size={20} />
+              Payout History
+            </h2>
+            <div className="payouts-list">
+              {payouts.map(p => {
+                const player = getPlayerById(p.playerId);
+                return (
+                  <div key={p.id} className="payout-item">
+                    <div>
+                      <div className="payout-player">{player?.name || 'Unknown'}</div>
+                      <div className="payout-reason">{p.reason}</div>
+                    </div>
+                    <div className="payout-amount">${p.amount.toFixed(2)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

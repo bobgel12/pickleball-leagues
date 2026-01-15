@@ -17,7 +17,8 @@ export default function LeagueDashboard({
   totalUnpaid,
   onStartEventDay,
   onNavigate,
-  onExport
+  onExport,
+  isAdmin = false
 }) {
   const stats = calculateLeagueStats(league);
   const canStartNewDay = 
@@ -51,14 +52,16 @@ export default function LeagueDashboard({
             <h2 style={{ margin: 0, marginBottom: '8px' }}>{league.name}</h2>
             {getStatusBadge(league.status)}
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn" onClick={() => onNavigate('setup')} title="League Settings">
-              <Settings size={16} />
-            </button>
-            <button className="btn" onClick={onExport} title="Export League Data">
-              <Download size={16} />
-            </button>
-          </div>
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn" onClick={() => onNavigate('setup')} title="League Settings">
+                <Settings size={16} />
+              </button>
+              <button className="btn" onClick={onExport} title="Export League Data">
+                <Download size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Stats Overview */}
@@ -115,13 +118,15 @@ export default function LeagueDashboard({
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>unpaid</div>
                 </div>
               )}
-              <button 
-                className="btn" 
-                onClick={() => onNavigate('prizePool')}
-                style={{ padding: '8px 12px' }}
-              >
-                Manage
-              </button>
+              {isAdmin && (
+                <button 
+                  className="btn" 
+                  onClick={() => onNavigate('prizePool')}
+                  style={{ padding: '8px 12px' }}
+                >
+                  Manage
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -188,15 +193,22 @@ export default function LeagueDashboard({
               {currentEventDay.checkedInPlayers.length}/{league.maxPlayersPerDay} players checked in
             </span>
           </div>
-          <div style={{ marginTop: '16px' }}>
-            <button 
-              className="btn primary" 
-              onClick={() => onNavigate('eventDay')}
-            >
-              <Play size={16} />
-              {currentEventDay.status === EVENT_DAY_STATUS.CHECKIN ? 'Manage Check-In' : 'View Matches'}
-            </button>
-          </div>
+          {isAdmin && (
+            <div style={{ marginTop: '16px' }}>
+              <button 
+                className="btn primary" 
+                onClick={() => onNavigate('eventDay')}
+              >
+                <Play size={16} />
+                {currentEventDay.status === EVENT_DAY_STATUS.CHECKIN ? 'Manage Check-In' : 'View Matches'}
+              </button>
+            </div>
+          )}
+          {!isAdmin && (
+            <div style={{ marginTop: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+              Event Day {currentEventDay.dayNumber} is in progress
+            </div>
+          )}
         </section>
       )}
 
@@ -204,7 +216,7 @@ export default function LeagueDashboard({
       <section className="card">
         <h3 style={{ margin: '0 0 16px 0' }}>Quick Actions</h3>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {canStartNewDay && (
+          {isAdmin && canStartNewDay && (
             <button className="btn primary" onClick={onStartEventDay}>
               <Play size={16} />
               Start Event Day {stats.completedEventDays + 1}
@@ -214,10 +226,12 @@ export default function LeagueDashboard({
             <BarChart3 size={16} />
             View Standings
           </button>
-          <button className="btn" onClick={() => onNavigate('setup')}>
-            <Users size={16} />
-            Manage Players
-          </button>
+          {isAdmin && (
+            <button className="btn" onClick={() => onNavigate('setup')}>
+              <Users size={16} />
+              Manage Players
+            </button>
+          )}
         </div>
       </section>
 
@@ -276,12 +290,14 @@ export default function LeagueDashboard({
           <Users size={48} style={{ color: 'var(--text-secondary)', marginBottom: '16px' }} />
           <h3 style={{ margin: '0 0 8px 0' }}>No Players Registered</h3>
           <p style={{ color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
-            Start by adding players to your league
+            {isAdmin ? 'Start by adding players to your league' : 'No players have been registered yet'}
           </p>
-          <button className="btn primary" onClick={() => onNavigate('setup')}>
-            <Users size={16} />
-            Add Players
-          </button>
+          {isAdmin && (
+            <button className="btn primary" onClick={() => onNavigate('setup')}>
+              <Users size={16} />
+              Add Players
+            </button>
+          )}
         </section>
       )}
     </div>
