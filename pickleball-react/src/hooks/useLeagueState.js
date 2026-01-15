@@ -42,9 +42,48 @@ export function useLeagueState() {
     return 1;
   });
 
-  // Load from API on mount
+  // Track club slug to reload data when it changes
+  const [clubSlug, setClubSlug] = useState(() => {
+    return sessionStorage.getItem('pickleball_club_slug') ||
+           localStorage.getItem('pickleball_club_slug') ||
+           null;
+  });
+
+  // Watch for club slug changes in storage
+  useEffect(() => {
+    const checkClubSlug = () => {
+      const currentSlug = sessionStorage.getItem('pickleball_club_slug') ||
+                         localStorage.getItem('pickleball_club_slug') ||
+                         null;
+      if (currentSlug !== clubSlug) {
+        setClubSlug(currentSlug);
+      }
+    };
+
+    // Check immediately
+    checkClubSlug();
+
+    // Poll for changes (storage events don't work across tabs in all browsers)
+    const interval = setInterval(checkClubSlug, 500);
+
+    // Also listen to storage events
+    const handleStorageChange = (e) => {
+      if (e.key === 'pickleball_club_slug') {
+        checkClubSlug();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [clubSlug]);
+
+  // Load from API on mount and when club slug changes
   useEffect(() => {
     const loadData = async () => {
+      setIsLoading(true);
       try {
         const loaded = await loadLeagueData();
         if (loaded) {
@@ -96,7 +135,7 @@ export function useLeagueState() {
     };
 
     loadData();
-  }, []);
+  }, [clubSlug]);
 
   // Auto-save on league changes (debounced)
   useEffect(() => {
