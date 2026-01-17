@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd pickleball-react && npm install && npm run build",
+    "build": "cd pickleball-react && npm ci && npm run build",
     "dev": "vercel dev",
     "dev:vite": "cd pickleball-react && npm run dev"
   },
