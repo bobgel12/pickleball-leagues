@@ -439,6 +439,7 @@ export function generateMixedRounds(courtPlayers, partners, getPlayerGender, sta
     
     // All rounds (2-6) must separate assigned partners
     // Create mixed teams with partners split
+    // For 4 players per court, ensure all players are used (no sitting out after Round 1)
     for (let i = 0; i < Math.min(men.length, women.length); i++) {
       const manIndex = (roundNum + i) % men.length;
       const womanIndex = (roundNum + i) % women.length;
@@ -476,8 +477,15 @@ export function generateMixedRounds(courtPlayers, partners, getPlayerGender, sta
             }
           }
         }
-        // If still no alternative, skip this pairing (edge case - should be rare)
-        if (!foundAlternative) continue;
+        // If still no alternative, use partner pair to ensure all players are used (especially for 4 players per court)
+        if (!foundAlternative) {
+          // Use partner pair rather than skipping to avoid having someone sit out
+          if (!usedMen.has(manId) && !usedWomen.has(womanId)) {
+            roundTeams.push([manId, womanId]);
+            usedMen.add(manId);
+            usedWomen.add(womanId);
+          }
+        }
       } else {
         // Not partners, can pair normally
         if (!usedMen.has(manId) && !usedWomen.has(womanId)) {
@@ -489,12 +497,15 @@ export function generateMixedRounds(courtPlayers, partners, getPlayerGender, sta
     }
     
     // Create matches from teams
+    // For 4 players per court, ensure no one sits out after Round 1
     if (roundTeams.length >= 2) {
       for (let i = 0; i < roundTeams.length; i += 2) {
         if (i + 1 < roundTeams.length) {
-          const sittingOut = courtPlayers.find(p => 
-            !roundTeams[i].includes(p) && !roundTeams[i + 1].includes(p)
-          );
+          // For 4 players per court, all should be playing (no sitting out after Round 1)
+          const allPlayersInMatch = [...roundTeams[i], ...roundTeams[i + 1]];
+          const sittingOut = courtPlayers.length === 4 && allPlayersInMatch.length === 4
+            ? null  // All 4 players are used, no one sits out
+            : courtPlayers.find(p => !roundTeams[i].includes(p) && !roundTeams[i + 1].includes(p));
           
           rounds.push({
             roundNumber: actualRoundNumber,
@@ -671,4 +682,3 @@ export function validateSchedule(playerIds, schedule) {
     duplicatePairings
   };
 }
-
