@@ -20,9 +20,23 @@ import {
   setPartner,
   validatePartnership,
   autoAssignPartners,
-  canChangePartners
+  canChangePartners,
+  normalizePartnerPair,
+  saveClubToLocalStorage,
+  loadClubFromLocalStorage,
+  clearClub,
+  createDefaultClub,
+  normalizeClub
 } from '../utils/leagueStorage.js';
 import { loadLeagueData, saveLeagueData } from '../utils/apiStorage.js';
+import {
+  fetchClubById,
+  fetchAllClubs,
+  createClub as createClubApi,
+  updateClub as updateClubApi,
+  deleteClub as deleteClubApi,
+  searchClubs
+} from '../utils/clubApi.js';
 import { LEAGUE_STATUS, EVENT_DAY_STATUS, DEFAULT_DUPR_RATING } from '../utils/constants.js';
 
 export function useLeagueState() {
@@ -33,6 +47,38 @@ export function useLeagueState() {
 
   const [isLoading, setIsLoading] = useState(true);
   const saveTimeoutRef = useRef(null);
+
+  const [club, setClub] = useState(() => {
+    // Try to load from localStorage cache first (for immediate UI render)
+    const loadedLeague = loadLeague();
+    if (loadedLeague && loadedLeague.clubId) {
+      const cachedClub = loadClubFromLocalStorage(loadedLeague.clubId);
+      if (cachedClub) {
+        return cachedClub;
+      }
+    }
+    // Fallback to default club cache
+    const defaultClub = loadClubFromLocalStorage();
+    return defaultClub || null;
+  });
+
+  // Load club from database on mount if clubId exists
+  useEffect(() => {
+    if (league.clubId && (!club || club.id !== league.clubId)) {
+      // Load from database asynchronously
+      fetchClubById(league.clubId)
+        .then((dbClub) => {
+          if (dbClub) {
+            setClub(dbClub);
+            // Cache in localStorage
+            saveClubToLocalStorage(dbClub);
+          }
+        })
+        .catch((error) => {
+          console.warn('Failed to load club from database, using cache:', error);
+        });
+    }
+  }, [league.clubId]); // Only run when clubId changes
 
   const [playerIdCounter, setPlayerIdCounter] = useState(() => {
     return 1;
@@ -165,6 +211,13 @@ export function useLeagueState() {
       }
     };
   }, [league, isLoading]);
+
+  // Cache club in localStorage when it changes (database is primary)
+  useEffect(() => {
+    if (club) {
+      saveClubToLocalStorage(club);
+    }
+  }, [club]);
 
   // Generate unique player ID
   const generatePlayerId = useCallback(() => {
@@ -742,6 +795,173 @@ export function useLeagueState() {
     return canChangePartners(league);
   }, [league]);
 
+  // ==========================================
+  // CLUB MANAGEMENT (Database Integration)
+  // ==========================================
+
+  // Load club from database by ID
+  const loadClubById = useCallback(async (clubId) => {
+    try {
+      const dbClub = await fetchClubById(clubId);
+      if (dbClub) {
+        setClub(dbClub);
+        saveClubToLocalStorage(dbClub);
+        return dbClub;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading club from database:', error);
+      // Fallback to cache
+      const cached = loadClubFromLocalStorage(clubId);
+      if (cached) {
+        setClub(cached);
+        return cached;
+      }
+      return null;
+    }
+  }, []);
+
+  // Fetch all clubs from database
+  const fetchClubs = useCallback(async () => {
+    try {
+      const clubs = await fetchAllClubs();
+      return clubs;
+    } catch (error) {
+      console.error('Error fetching clubs from database:', error);
+      return [];
+    }
+  }, []);
+
+  // Create new club in database
+  const createClub = useCallback(async (clubData) => {
+    try {
+      const newClub = await createClubApi(clubData);
+      setClub(newClub);
+      
+      // Link club to league
+      if (!league.clubId && newClub.id) {
+        setLeague(prev => ({
+          ...prev,
+          clubId: newClub.id
+        }));
+      }
+      
+      return newClub;
+    } catch (error) {
+      console.error('Error creating club in database:', error);
+      throw error;
+    }
+  }, [league.clubId]);
+
+  // Update club in database
+  const updateClub = useCallback(async (clubId, clubData) => {
+    try {
+      const updatedClub = await updateClubApi(clubId, clubData);
+      setClub(updatedClub);
+      saveClubToLocalStorage(updatedClub);
+      
+      // Ensure club is linked to league
+      if (!league.clubId && updatedClub.id) {
+        setLeague(prev => ({
+          ...prev,
+          clubId: updatedClub.id
+        }));
+      }
+      
+      return updatedClub;
+    } catch (error) {
+      console.error('Error updating club in database:', error);
+      // Fallback: update local state and cache
+      const updatedClub = { ...club, ...clubData, updatedAt: Date.now() };
+      setClub(updatedClub);
+      saveClubToLocalStorage(updatedClub);
+      throw error;
+    }
+  }, [club, league.clubId]);
+
+  // Update club information (convenience wrapper - creates if doesn't exist)
+  const updateOrCreateClub = useCallback(async (clubData) => {
+    if (club && club.id) {
+      // Update existing club
+      return await updateClub(club.id, clubData);
+    } else {
+      // Create new club
+      return await createClub(clubData);
+    }
+  }, [club, updateClub, createClub]);
+
+  // Set club for league (by ID - assumes club exists in database)
+  const setLeagueClub = useCallback(async (clubId) => {
+    setLeague(prev => ({
+      ...prev,
+      clubId
+    }));
+    
+    // Load club from database
+    if (clubId) {
+      await loadClubById(clubId);
+    } else {
+      setClub(null);
+    }
+  }, [loadClubById]);
+
+  // Get club information (returns current club state)
+  const getClub = useCallback(() => {
+    return club;
+  }, [club]);
+
+  // Search clubs in database
+  const searchClubsInDatabase = useCallback(async (query) => {
+    try {
+      const clubs = await searchClubs(query);
+      return clubs;
+    } catch (error) {
+      console.error('Error searching clubs:', error);
+      return [];
+    }
+  }, []);
+
+  // Clear club information
+  const resetClub = useCallback(async () => {
+    try {
+      if (club && club.id) {
+        await deleteClubApi(club.id);
+      }
+    } catch (error) {
+      console.error('Error deleting club from database:', error);
+    }
+    
+    clearClub();
+    setClub(null);
+    setLeague(prev => ({
+      ...prev,
+      clubId: null
+    }));
+  }, [club]);
+
+  // Record a partner pair matchup (when Round 1 match is scored)
+  const recordPartnerMatchup = useCallback((eventDayId, courtIndex, pair1Ids, pair2Ids) => {
+    setLeague(prev => {
+      const newMatchup = {
+        pair1: normalizePartnerPair(pair1Ids[0], pair1Ids[1]),
+        pair2: normalizePartnerPair(pair2Ids[0], pair2Ids[1]),
+        eventDayId,
+        courtIndex,
+        createdAt: Date.now()
+      };
+
+      return {
+        ...prev,
+        partnerMatchups: [
+          ...(prev.partnerMatchups || []),
+          newMatchup
+        ]
+      };
+    });
+
+    return true;
+  }, []);
+
   return {
     league,
     currentEventDay,
@@ -791,7 +1011,20 @@ export function useLeagueState() {
     assignPartner,
     removePartner,
     autoAssignPartnersToLeague,
-    canModifyPartners
+    canModifyPartners,
+    recordPartnerMatchup,
+
+    // Club Management (Database Integration)
+    club,
+    getClub,
+    createClub,
+    updateClub,
+    updateOrCreateClub,
+    loadClubById,
+    setLeagueClub,
+    resetClub,
+    fetchClubs,
+    searchClubsInDatabase
   };
 }
 

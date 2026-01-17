@@ -2,15 +2,36 @@
  * League Storage - Persistence and Export/Import for Ladder League
  */
 
-import { LEAGUE_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS, LEAGUE_MODE } from './constants.js';
+import { LEAGUE_STORAGE_KEY, CLUB_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS, LEAGUE_MODE } from './constants.js';
 
 /**
  * Create a default league state
  */
+/**
+ * Create a default club information object
+ */
+export function createDefaultClub(overrides = {}) {
+  return {
+    id: Date.now(),
+    name: '',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    phone: '',
+    email: '',
+    website: '',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    ...overrides
+  };
+}
+
 export function createDefaultLeague(overrides = {}) {
   return {
     id: Date.now(),
     name: 'Ladder League',
+    clubId: null, // Reference to club information
     maxPlayers: LEAGUE_DEFAULTS.maxPlayers,
     maxPlayersPerDay: LEAGUE_DEFAULTS.maxPlayersPerDay,
     courtsCount: LEAGUE_DEFAULTS.courtsCount,
@@ -25,6 +46,8 @@ export function createDefaultLeague(overrides = {}) {
     createdAt: Date.now(),
     // Partner assignments for mixed doubles: { [playerId]: partnerId }
     partners: {},
+    // Partner pair matchup tracking: { pair1: [id1, id2], pair2: [id3, id4], eventDayId, courtIndex, createdAt }
+    partnerMatchups: [],
     // Money Round Configuration
     moneyRoundEnabled: false,
     moneyRoundConfig: {
@@ -141,6 +164,108 @@ export function clearLeague() {
 }
 
 /**
+ * Save club information to localStorage (cache only - database is primary)
+ * Note: This is now a cache layer. Use clubApi functions for database operations.
+ */
+export function saveClubToLocalStorage(club) {
+  try {
+    const clubToSave = {
+      ...club,
+      updatedAt: Date.now()
+    };
+    const serialized = JSON.stringify(clubToSave);
+    // Cache by club ID
+    if (club.id) {
+      localStorage.setItem(`pb_club_${club.id}`, serialized);
+    }
+    // Also save as default club if no clubId specified
+    localStorage.setItem(CLUB_STORAGE_KEY, serialized);
+    return true;
+  } catch (error) {
+    console.error('Failed to cache club in localStorage:', error);
+    return false;
+  }
+}
+
+/**
+ * Load club information from localStorage (cache only - database is primary)
+ * Note: This is now a cache layer. Use clubApi functions for database operations.
+ */
+export function loadClubFromLocalStorage(clubId = null) {
+  try {
+    let serialized = null;
+    
+    if (clubId) {
+      // Try to load specific club by ID
+      serialized = localStorage.getItem(`pb_club_${clubId}`);
+    }
+    
+    // Fallback to default club
+    if (!serialized) {
+      serialized = localStorage.getItem(CLUB_STORAGE_KEY);
+    }
+    
+    if (!serialized) {
+      return null;
+    }
+    
+    const club = JSON.parse(serialized);
+    return normalizeClub(club);
+  } catch (error) {
+    console.error('Failed to load club from localStorage:', error);
+    return null;
+  }
+}
+
+/**
+ * Save club information (legacy - kept for backward compatibility)
+ * Now uses localStorage as cache, database should be primary
+ */
+export function saveClub(club) {
+  return saveClubToLocalStorage(club);
+}
+
+/**
+ * Load club information (legacy - kept for backward compatibility)
+ * Now uses localStorage as cache, database should be primary
+ */
+export function loadClub(clubId = null) {
+  return loadClubFromLocalStorage(clubId);
+}
+
+/**
+ * Normalize club state to ensure all required fields exist
+ */
+export function normalizeClub(club) {
+  if (!club) return null;
+
+  const normalized = {
+    ...createDefaultClub(),
+    ...club
+  };
+
+  // Ensure updatedAt exists
+  if (!normalized.updatedAt) {
+    normalized.updatedAt = normalized.createdAt || Date.now();
+  }
+
+  return normalized;
+}
+
+/**
+ * Clear club from localStorage
+ */
+export function clearClub() {
+  try {
+    localStorage.removeItem(CLUB_STORAGE_KEY);
+    return true;
+  } catch (error) {
+    console.error('Failed to clear club:', error);
+    return false;
+  }
+}
+
+/**
  * Normalize league state to ensure all required fields exist
  */
 export function normalizeLeagueState(league) {
@@ -174,6 +299,16 @@ export function normalizeLeagueState(league) {
   // Ensure partners object exists
   if (!normalized.partners || typeof normalized.partners !== 'object') {
     normalized.partners = {};
+  }
+
+  // Ensure partnerMatchups array exists
+  if (!Array.isArray(normalized.partnerMatchups)) {
+    normalized.partnerMatchups = [];
+  }
+
+  // Ensure clubId exists (can be null)
+  if (normalized.clubId === undefined) {
+    normalized.clubId = null;
   }
 
   // Ensure eventDays have all required fields
@@ -214,6 +349,7 @@ export function exportLeagueToJSON(league) {
     league: {
       id: league.id,
       name: league.name,
+      clubId: league.clubId || null,
       maxPlayers: league.maxPlayers,
       maxPlayersPerDay: league.maxPlayersPerDay,
       courtsCount: league.courtsCount,
@@ -266,8 +402,25 @@ export function exportLeagueToJSON(league) {
     // Prize Pool Data
     prizePool: league.prizePool || { balance: 0, contributions: [], payouts: [] },
     // Partner assignments for mixed doubles
-    partners: league.partners || {}
+    partners: league.partners || {},
+    // Partner pair matchup history
+    partnerMatchups: league.partnerMatchups || [],
+    // Club information (if clubId is set, include club data)
+    club: null // Will be populated if clubId exists
   };
+
+  // Include club information if clubId is set
+  // Try database first, then fallback to localStorage cache
+  if (league.clubId) {
+    // Try to get from cache first (for immediate export)
+    const cachedClub = loadClubFromLocalStorage(league.clubId);
+    if (cachedClub && cachedClub.id === league.clubId) {
+      exportData.club = cachedClub;
+    } else {
+      // Note: Database fetch would be async, so we export cached data
+      // Full club data should be loaded from database separately if needed
+    }
+  }
 
   return exportData;
 }
@@ -320,11 +473,19 @@ export function validateLeagueImport(data) {
 
 /**
  * Import league from JSON data
+ * Note: Club data will be saved to localStorage cache only.
+ * Use clubApi functions to sync with database after import.
  */
 export function importLeagueFromJSON(data) {
   const validation = validateLeagueImport(data);
   if (!validation.valid) {
     throw new Error(`Invalid import data: ${validation.errors.join(', ')}`);
+  }
+
+  // Import club information if present (cache to localStorage)
+  if (data.club) {
+    saveClubToLocalStorage(data.club);
+    // Note: To sync with database, call clubApi.createClub() or clubApi.updateClub() separately
   }
 
   // Reconstruct the league object
@@ -342,7 +503,9 @@ export function importLeagueFromJSON(data) {
     // Import prize pool if present
     prizePool: data.prizePool || { balance: 0, contributions: [], payouts: [] },
     // Import partners if present
-    partners: data.partners || {}
+    partners: data.partners || {},
+    // Import partner matchups if present
+    partnerMatchups: data.partnerMatchups || []
   };
 
   return normalizeLeagueState(league);
@@ -582,19 +745,56 @@ export function autoAssignPartners(league) {
 }
 
 /**
- * Check if partners can be changed (only between event days)
+ * Check if partners can be changed (locked for entire league once first event day exists)
  * @param {Object} league - League object
  * @returns {Object} { canChange: boolean, reason: string|null }
  */
 export function canChangePartners(league) {
-  const currentDay = getCurrentEventDay(league);
-  
-  if (currentDay && currentDay.status !== EVENT_DAY_STATUS.COMPLETED) {
+  // Partners locked once league starts (any event day exists)
+  if (league.eventDays && league.eventDays.length > 0) {
     return {
       canChange: false,
-      reason: 'Partners can only be changed between event days. Please complete the current event day first.'
+      reason: 'Partners are locked for the entire league once the first event day is created.'
     };
   }
   
   return { canChange: true, reason: null };
+}
+
+/**
+ * Normalize partner pair IDs (always sorted: [minId, maxId])
+ * @param {number} id1 - First player ID
+ * @param {number} id2 - Second player ID
+ * @returns {Array} Normalized pair [minId, maxId]
+ */
+export function normalizePartnerPair(id1, id2) {
+  return id1 < id2 ? [id1, id2] : [id2, id1];
+}
+
+/**
+ * Check if two partner pairs have played each other
+ * @param {Object} league - League object
+ * @param {Array} pair1Ids - First pair [id1, id2]
+ * @param {Array} pair2Ids - Second pair [id3, id4]
+ * @returns {boolean} True if pairs have played
+ */
+export function havePartnersPlayed(league, pair1Ids, pair2Ids) {
+  if (!league.partnerMatchups || league.partnerMatchups.length === 0) {
+    return false;
+  }
+
+  const normalized1 = normalizePartnerPair(pair1Ids[0], pair1Ids[1]);
+  const normalized2 = normalizePartnerPair(pair2Ids[0], pair2Ids[1]);
+  
+  return league.partnerMatchups.some(matchup => {
+    const m1 = normalizePartnerPair(matchup.pair1[0], matchup.pair1[1]);
+    const m2 = normalizePartnerPair(matchup.pair2[0], matchup.pair2[1]);
+    
+    return (
+      (normalized1[0] === m1[0] && normalized1[1] === m1[1] &&
+       normalized2[0] === m2[0] && normalized2[1] === m2[1]) ||
+      (normalized1[0] === m2[0] && normalized1[1] === m2[1] &&
+       normalized2[0] === m1[0] && normalized2[1] === m1[1])
+    );
+  });
 }

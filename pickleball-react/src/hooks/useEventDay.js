@@ -24,7 +24,7 @@ import {
   isMoneyRoundComplete
 } from '../utils/moneyRound.js';
 
-export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById) {
+export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById, recordPartnerMatchup) {
   const currentEventDay = useMemo(() => {
     if (league.currentEventDayIndex < 0 || league.currentEventDayIndex >= league.eventDays.length) {
       return null;
@@ -89,7 +89,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     const schedule = generateEventDaySchedule(courtAssignments, {
       leagueMode: league.leagueMode || 'regular',
       partners: league.partners || {},
-      getPlayerGender
+      getPlayerGender,
+      partnerMatchups: league.partnerMatchups || []
     });
 
     updateEventDay(currentEventDay.id, {
@@ -109,18 +110,36 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     if (!currentEventDay) return false;
     if (currentEventDay.status !== EVENT_DAY_STATUS.ACTIVE) return false;
 
+    const match = currentEventDay.schedule.find(m => m.id === matchId);
+    if (!match) return false;
+
     const winner = scoreA > scoreB ? 'A' : 'B';
 
+    // Record partner pair matchup for Round 1 matches in mixed doubles
+    if (league.leagueMode === 'mixed_doubles' && 
+        match.roundNumber === 1 && 
+        match.playedWithPartner &&
+        recordPartnerMatchup &&
+        match.teamA.length === 2 && 
+        match.teamB.length === 2) {
+      recordPartnerMatchup(
+        currentEventDay.id,
+        match.courtIndex,
+        match.teamA,
+        match.teamB
+      );
+    }
+
     updateEventDay(currentEventDay.id, {
-      schedule: currentEventDay.schedule.map(match =>
-        match.id === matchId
-          ? { ...match, scoreA, scoreB, winner, status: 'completed' }
-          : match
+      schedule: currentEventDay.schedule.map(m =>
+        m.id === matchId
+          ? { ...m, scoreA, scoreB, winner, status: 'completed' }
+          : m
       )
     });
 
     return true;
-  }, [currentEventDay, updateEventDay]);
+  }, [currentEventDay, updateEventDay, league.leagueMode, recordPartnerMatchup]);
 
   // Clear a match score
   const clearMatchScore = useCallback((matchId) => {

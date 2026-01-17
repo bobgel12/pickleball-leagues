@@ -86,7 +86,8 @@ function App() {
     leagueState.updateEventDay,
     leagueState.updatePlayerStats,
     leagueState.completeEventDay,
-    leagueState.getPlayerById
+    leagueState.getPlayerById,
+    leagueState.recordPartnerMatchup
   );
 
   // League navigation

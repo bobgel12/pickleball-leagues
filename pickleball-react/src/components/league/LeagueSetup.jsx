@@ -633,7 +633,7 @@ export default function LeagueSetup({
             Partner Management
           </h2>
           <p style={{ color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
-            Assign partners for mixed doubles. Partners can only be changed between event days.
+            Assign partners for mixed doubles. Partners are locked for the entire league once the first event day is created.
           </p>
 
           {canModifyPartners && !canModifyPartners.canChange && (
