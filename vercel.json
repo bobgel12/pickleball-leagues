@@ -7,19 +7,19 @@
       "destination": "/api/:path*"
     },
     {
-      "source": "/app/assets/:path*",
+      "source": "/assets/:path*",
       "destination": "/pickleball-react/dist/assets/:path*"
     },
     {
-      "source": "/app/:path*",
+      "source": "/:path*",
       "destination": "/pickleball-react/dist/:path*"
     },
     {
-      "source": "/app",
+      "source": "/",
       "destination": "/pickleball-react/dist/index.html"
     },
     {
-      "source": "/",
+      "source": "/simple",
       "destination": "/index.html"
     }
   ],
@@ -34,7 +34,7 @@
       ]
     },
     {
-      "source": "/app/assets/:path*",
+      "source": "/assets/:path*",
       "headers": [
         {
           "key": "Cache-Control",
