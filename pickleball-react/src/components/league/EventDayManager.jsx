@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, Calendar, Users, Play, CheckCircle2,
-  ArrowUp, ArrowDown, Minus, Target
+  ArrowUp, ArrowDown, Minus, Target, Send
 } from 'lucide-react';
 import { EVENT_DAY_STATUS } from '../../utils/constants.js';
 import LeagueCheckIn from './LeagueCheckIn.jsx';
@@ -25,7 +25,9 @@ export default function EventDayManager({
   getMatchesByCourt,
   getPlayerById,
   onNavigate,
-  toast
+  toast,
+  isCurrentRoundComplete,
+  onSubmitRound
 }) {
   const [showMovementPreview, setShowMovementPreview] = useState(false);
 
@@ -176,6 +178,55 @@ export default function EventDayManager({
               }}
             />
           </section>
+
+          {/* Submit Round Button for Regular League */}
+          {league.leagueMode === 'regular' && 
+           currentEventDay.status === EVENT_DAY_STATUS.ACTIVE && 
+           isCurrentRoundComplete && (
+            <section className="card" style={{ 
+              padding: '24px',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+              border: '2px solid rgba(59, 130, 246, 0.3)'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <h3 style={{ 
+                    margin: '0 0 8px 0', 
+                    fontSize: '18px',
+                    fontWeight: '600'
+                  }}>
+                    Round {currentEventDay.currentActiveRound || 1} Complete
+                  </h3>
+                  <p style={{ 
+                    margin: 0, 
+                    color: 'var(--text-secondary)', 
+                    fontSize: '14px' 
+                  }}>
+                    All matches in this round have been scored. Submit to apply ladder movement and generate next round.
+                  </p>
+                </div>
+                <button 
+                  className="btn primary" 
+                  onClick={() => {
+                    const success = onSubmitRound();
+                    if (success) {
+                      if (toast) toast.success('Round submitted! Ladder movement applied.');
+                    } else {
+                      if (toast) toast.error('Failed to submit round. Please try again.');
+                    }
+                  }}
+                  style={{ 
+                    padding: '14px 32px', 
+                    fontSize: '16px',
+                    fontWeight: '600'
+                  }}
+                >
+                  <Send size={18} style={{ marginRight: '8px' }} />
+                  Submit Round
+                </button>
+              </div>
+            </section>
+          )}
 
           {/* Close Event Day */}
           {allMatchesCompleted && (

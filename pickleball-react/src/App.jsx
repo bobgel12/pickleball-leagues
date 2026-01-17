@@ -818,6 +818,8 @@ function App() {
             getPlayerById={leagueState.getPlayerById}
             onNavigate={handleLeagueNavigate}
             toast={toast}
+            isCurrentRoundComplete={eventDay.isCurrentRoundComplete}
+            onSubmitRound={eventDay.submitRound}
           />
         );
       case 'standings':

@@ -132,6 +132,20 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     return roundMatches.every(m => m.status === 'completed');
   }, [currentEventDay]);
 
+  // Check if current active round is complete (for regular league submit button)
+  const isCurrentRoundComplete = useMemo(() => {
+    if (!currentEventDay || league.leagueMode !== 'regular') return false;
+    
+    const currentActiveRound = currentEventDay.currentActiveRound || 1;
+    const currentRoundMatches = currentEventDay.schedule.filter(
+      m => m.roundNumber === currentActiveRound
+    );
+    
+    if (currentRoundMatches.length === 0) return false;
+    
+    return currentRoundMatches.every(m => m.status === 'completed');
+  }, [currentEventDay, league.leagueMode]);
+
   // Record a match score
   const recordMatchScore = useCallback((matchId, scoreA, scoreB) => {
     if (!currentEventDay) return false;
@@ -168,7 +182,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       schedule: updatedSchedule
     });
 
-    // For regular league and mixed doubles, check if current active round is complete after this score
+    // For mixed doubles, check if current active round is complete after this score
+    // For regular league, movement will be triggered manually via submitRound()
     const currentActiveRound = currentEventDay.currentActiveRound || 1;
     
     // Check if the scored match is in the current active round
@@ -176,95 +191,10 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       const currentRoundMatches = updatedSchedule.filter(m => m.roundNumber === currentActiveRound);
       const roundComplete = currentRoundMatches.length > 0 && currentRoundMatches.every(m => m.status === 'completed');
       
-      if (league.leagueMode === 'regular' && roundComplete) {
-        // Regular league: calculate movement and generate next round after each round
-        // Get current court assignments (may have changed from previous rounds)
-        const currentCourtAssignments = currentEventDay.postRound1CourtAssignments || 
-                                       currentEventDay.courtAssignments;
-        
-        // Calculate ladder movement based on ONLY this round's matches
-        const { movements } = calculateLadderMovement(
-          currentCourtAssignments,
-          currentRoundMatches,
-          league.scoringSystem,
-          {
-            leagueMode: 'regular',
-            partners: {}
-          }
-        );
-
-        // Apply movement using nextCourt from movements
-        const playerNewCourt = {};
-        currentCourtAssignments.forEach((court, courtIndex) => {
-          court.forEach(playerId => {
-            playerNewCourt[playerId] = courtIndex;
-          });
-        });
-        
-        // Apply movements using nextCourt
-        movements.forEach(move => {
-          if (move.nextCourt !== undefined) {
-            playerNewCourt[move.playerId] = move.nextCourt;
-          }
-        });
-        
-        // Build new court assignments
-        let newCourtAssignments = [[], [], [], []];
-        Object.entries(playerNewCourt).forEach(([playerId, courtIndex]) => {
-          newCourtAssignments[courtIndex].push(parseInt(playerId));
-        });
-        
-        // Sort each court
-        newCourtAssignments.forEach(court => {
-          court.sort((a, b) => a - b);
-        });
-
-        // Generate next round with partner splitting
-        const nextRoundNumber = currentActiveRound + 1;
-        const nextRoundMatches = [];
-        let nextMatchId = Math.max(...updatedSchedule.map(m => m.id), 0) + 1;
-        
-        newCourtAssignments.forEach((courtPlayers, courtIndex) => {
-          if (!courtPlayers || courtPlayers.length < 4) return;
-
-          // Get previous round partners for this court
-          const previousPartners = getPreviousRoundPartners(
-            updatedSchedule,
-            courtIndex,
-            currentActiveRound
-          );
-
-          // Generate next round with partner splitting
-          const nextRound = generateNextRoundForRegularLeague(
-            courtPlayers,
-            previousPartners,
-            nextRoundNumber
-          );
-          
-          nextRound.forEach(round => {
-            nextRoundMatches.push({
-              id: nextMatchId++,
-              courtIndex,
-              roundNumber: round.roundNumber,
-              teamA: round.teamA,
-              teamB: round.teamB,
-              sittingOut: round.sittingOut,
-              playedWithPartner: false,
-              scoreA: null,
-              scoreB: null,
-              winner: null,
-              status: 'pending'
-            });
-          });
-        });
-
-        // Update event day with next active round, new courts, and next round matches
-        updateEventDay(currentEventDay.id, {
-          currentActiveRound: nextRoundNumber,
-          postRound1CourtAssignments: newCourtAssignments,
-          schedule: [...updatedSchedule, ...nextRoundMatches]
-        });
-      } else if (league.leagueMode === 'mixed_doubles' && roundComplete && currentActiveRound < 6) {
+      // Regular league: don't auto-trigger movement, wait for manual submitRound() call
+      // Mixed doubles: keep automatic behavior
+      if (league.leagueMode === 'mixed_doubles' && roundComplete && currentActiveRound < 6) {
+      if (league.leagueMode === 'mixed_doubles' && roundComplete && currentActiveRound < 6) {
         // Mixed doubles: existing logic
           // Get current court assignments (may have changed from previous rounds)
           const currentCourtAssignments = currentEventDay.postRound1CourtAssignments || 
@@ -395,6 +325,111 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
 
     return true;
   }, [currentEventDay, updateEventDay, league, recordPartnerMatchup, calculateLadderMovement]);
+
+  // Submit round for regular league (triggers movement and generates next round)
+  const submitRound = useCallback(() => {
+    if (!currentEventDay || league.leagueMode !== 'regular') return false;
+    if (currentEventDay.status !== EVENT_DAY_STATUS.ACTIVE) return false;
+
+    const currentActiveRound = currentEventDay.currentActiveRound || 1;
+    const currentRoundMatches = currentEventDay.schedule.filter(
+      m => m.roundNumber === currentActiveRound
+    );
+
+    // Check if all matches in current round are completed
+    if (currentRoundMatches.length === 0 || !currentRoundMatches.every(m => m.status === 'completed')) {
+      return false;
+    }
+
+    // Get current court assignments (may have changed from previous rounds)
+    const currentCourtAssignments = currentEventDay.postRound1CourtAssignments || 
+                                   currentEventDay.courtAssignments;
+    
+    // Calculate ladder movement based on ONLY this round's matches
+    const { movements } = calculateLadderMovement(
+      currentCourtAssignments,
+      currentRoundMatches,
+      league.scoringSystem,
+      {
+        leagueMode: 'regular',
+        partners: {}
+      }
+    );
+
+    // Apply movement using nextCourt from movements
+    const playerNewCourt = {};
+    currentCourtAssignments.forEach((court, courtIndex) => {
+      court.forEach(playerId => {
+        playerNewCourt[playerId] = courtIndex;
+      });
+    });
+    
+    // Apply movements using nextCourt
+    movements.forEach(move => {
+      if (move.nextCourt !== undefined) {
+        playerNewCourt[move.playerId] = move.nextCourt;
+      }
+    });
+    
+    // Build new court assignments
+    let newCourtAssignments = [[], [], [], []];
+    Object.entries(playerNewCourt).forEach(([playerId, courtIndex]) => {
+      newCourtAssignments[courtIndex].push(parseInt(playerId));
+    });
+    
+    // Sort each court
+    newCourtAssignments.forEach(court => {
+      court.sort((a, b) => a - b);
+    });
+
+    // Generate next round with partner splitting
+    const nextRoundNumber = currentActiveRound + 1;
+    const nextRoundMatches = [];
+    let nextMatchId = Math.max(...currentEventDay.schedule.map(m => m.id), 0) + 1;
+    
+    newCourtAssignments.forEach((courtPlayers, courtIndex) => {
+      if (!courtPlayers || courtPlayers.length < 4) return;
+
+      // Get previous round partners for this court
+      const previousPartners = getPreviousRoundPartners(
+        currentEventDay.schedule,
+        courtIndex,
+        currentActiveRound
+      );
+
+      // Generate next round with partner splitting
+      const nextRound = generateNextRoundForRegularLeague(
+        courtPlayers,
+        previousPartners,
+        nextRoundNumber
+      );
+      
+      nextRound.forEach(round => {
+        nextRoundMatches.push({
+          id: nextMatchId++,
+          courtIndex,
+          roundNumber: round.roundNumber,
+          teamA: round.teamA,
+          teamB: round.teamB,
+          sittingOut: round.sittingOut,
+          playedWithPartner: false,
+          scoreA: null,
+          scoreB: null,
+          winner: null,
+          status: 'pending'
+        });
+      });
+    });
+
+    // Update event day with next active round, new courts, and next round matches
+    updateEventDay(currentEventDay.id, {
+      currentActiveRound: nextRoundNumber,
+      postRound1CourtAssignments: newCourtAssignments,
+      schedule: [...currentEventDay.schedule, ...nextRoundMatches]
+    });
+
+    return true;
+  }, [currentEventDay, league, updateEventDay]);
 
   // Clear a match score
   const clearMatchScore = useCallback((matchId) => {
@@ -746,6 +781,10 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     moneyRoundProgress,
     allMoneyRoundMatchesCompleted,
     moneyRoundCourtsWithDetails,
+
+    // Regular League Round Submission
+    isCurrentRoundComplete,
+    submitRound,
 
     // Actions
     checkInPlayer,
