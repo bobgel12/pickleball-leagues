@@ -3,8 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd pickleball-react && npm install && npm run build"
+    "build": "cd pickleball-react && npm install && npm run build",
+    "dev": "vercel dev",
+    "dev:vite": "cd pickleball-react && npm run dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.90.1",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6"
   }
 }
-
-

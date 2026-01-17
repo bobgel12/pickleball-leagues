@@ -8,6 +8,7 @@ export const MAX_DUPR_RATING = 8.000;
 
 // Ladder League Constants
 export const LEAGUE_STORAGE_KEY = "pb_ladder_league";
+export const CLUB_STORAGE_KEY = "pb_club_info";
 
 export const LEAGUE_DEFAULTS = {
   maxPlayers: 40,

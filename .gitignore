@@ -4,6 +4,10 @@ pickleball-react/node_modules/
 *.log
 .DS_Store
 
+# Environment variables
+.env.local
+.env*.local
+
 # Playwright
 pickleball-react/playwright-report/
 pickleball-react/test-results/

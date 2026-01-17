@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users } from 'lucide-react';
+import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut, Lock, Shield } from 'lucide-react';
+import { useClub } from '../hooks/useClub';
 
 export default function Header({ 
   tournaments, 
@@ -10,8 +11,12 @@ export default function Header({
   theme, 
   onToggleTheme,
   activeSection,
-  onSectionChange 
+  onSectionChange,
+  isAdmin = false,
+  onEnterAdminMode,
+  onExitAdminMode
 }) {
+  const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
   
   // Ensure we have a valid activeTournamentId value for the select
@@ -30,26 +35,89 @@ export default function Header({
 
   return (
     <header>
-      <h1>
-        Pickleball League
-        {activeSection === 'tournaments' && currentTournament && (
-          <span id="tournamentNameDisplay">— {currentTournament.name}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <h1>
+          Pickleball League
+          {activeSection === 'tournaments' && currentTournament && (
+            <span id="tournamentNameDisplay">— {currentTournament.name}</span>
+          )}
+          {activeSection === 'league' && (
+            <span id="tournamentNameDisplay">— Ladder League</span>
+          )}
+        </h1>
+        {club && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+            <span className="pill" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Building2 size={12} />
+              {club.name}
+            </span>
+            {isAdmin && (
+              <span className="pill" style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                background: 'var(--success-bg)',
+                borderColor: 'var(--success-border)',
+                color: 'var(--success-text)'
+              }}>
+                <Shield size={12} />
+                Admin Mode
+              </span>
+            )}
+            {!isAdmin && onEnterAdminMode && (
+              <button
+                className="btn"
+                onClick={onEnterAdminMode}
+                type="button"
+                title="Enter Admin Mode"
+                style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+              >
+                <Lock size={14} />
+                Enter Admin Mode
+              </button>
+            )}
+            {isAdmin && onExitAdminMode && (
+              <button
+                className="btn warn"
+                onClick={onExitAdminMode}
+                type="button"
+                title="Exit Admin Mode"
+                style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+              >
+                <LogOut size={14} />
+                Exit Admin Mode
+              </button>
+            )}
+            <button
+              className="btn"
+              onClick={() => {
+                clearClub();
+                // Reload page to navigate back to club selector
+                window.location.reload();
+              }}
+              type="button"
+              title="Switch Club"
+              style={{ padding: '6px 12px', fontSize: '0.875rem' }}
+            >
+              <LogOut size={14} />
+              Switch Club
+            </button>
+          </div>
         )}
-        {activeSection === 'league' && (
-          <span id="tournamentNameDisplay">— Ladder League</span>
-        )}
-      </h1>
+      </div>
 
-      {/* Section Tabs */}
+      {/* Section Tabs - Only show Tournaments tab in admin mode */}
       {onSectionChange && (
         <div className="section-tabs" style={{ margin: '12px 0' }}>
-          <button
-            className={`section-tab ${activeSection === 'tournaments' ? 'active' : ''}`}
-            onClick={() => onSectionChange('tournaments')}
-          >
-            <Trophy size={16} />
-            Tournaments
-          </button>
+          {isAdmin && (
+            <button
+              className={`section-tab ${activeSection === 'tournaments' ? 'active' : ''}`}
+              onClick={() => onSectionChange('tournaments')}
+            >
+              <Trophy size={16} />
+              Tournaments
+            </button>
+          )}
           <button
             className={`section-tab ${activeSection === 'league' ? 'active' : ''}`}
             onClick={() => onSectionChange('league')}
@@ -101,10 +169,21 @@ export default function Header({
         </div>
       )}
 
-      <span className="pill">
-        <WifiOff size={12} />
-        Offline • Cookies (localStorage fallback)
-      </span>
+      {typeof navigator !== 'undefined' && (
+        <span className="pill">
+          {navigator.onLine ? (
+            <>
+              <Wifi size={12} />
+              Online
+            </>
+          ) : (
+            <>
+              <WifiOff size={12} />
+              Offline (localStorage only)
+            </>
+          )}
+        </span>
+      )}
       <span className="pill">
         <Activity size={12} />
         4 Courts

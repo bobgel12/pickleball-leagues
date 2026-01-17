@@ -8,7 +8,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { EVENT_DAY_STATUS, EVENT_DAY_PHASE } from '../utils/constants.js';
-import { generateEventDaySchedule, calculateScheduleProgress } from '../utils/roundRobin.js';
+import { generateEventDaySchedule, calculateScheduleProgress, generateMixedRounds } from '../utils/roundRobin.js';
 import {
   calculateLadderMovement,
   assignCourtsByDupr,
@@ -24,7 +24,7 @@ import {
   isMoneyRoundComplete
 } from '../utils/moneyRound.js';
 
-export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById) {
+export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById, recordPartnerMatchup) {
   const currentEventDay = useMemo(() => {
     if (league.currentEventDayIndex < 0 || league.currentEventDayIndex >= league.eventDays.length) {
       return null;
@@ -89,7 +89,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     const schedule = generateEventDaySchedule(courtAssignments, {
       leagueMode: league.leagueMode || 'regular',
       partners: league.partners || {},
-      getPlayerGender
+      getPlayerGender,
+      partnerMatchups: league.partnerMatchups || []
     });
 
     updateEventDay(currentEventDay.id, {
@@ -104,23 +105,189 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     return true;
   }, [currentEventDay, league.registeredPlayers, league.moneyRoundEnabled, updateEventDay]);
 
+  // Check if all Round 1 matches are completed (for mixed doubles)
+  const checkRound1Completion = useCallback(() => {
+    if (!currentEventDay || league.leagueMode !== 'mixed_doubles') return false;
+    
+    const round1Matches = currentEventDay.schedule.filter(m => m.roundNumber === 1);
+    if (round1Matches.length === 0) return false;
+    
+    return round1Matches.every(m => m.status === 'completed');
+  }, [currentEventDay, league.leagueMode]);
+
   // Record a match score
   const recordMatchScore = useCallback((matchId, scoreA, scoreB) => {
     if (!currentEventDay) return false;
     if (currentEventDay.status !== EVENT_DAY_STATUS.ACTIVE) return false;
 
+    const match = currentEventDay.schedule.find(m => m.id === matchId);
+    if (!match) return false;
+
     const winner = scoreA > scoreB ? 'A' : 'B';
 
+    // Record partner pair matchup for Round 1 matches in mixed doubles
+    if (league.leagueMode === 'mixed_doubles' && 
+        match.roundNumber === 1 && 
+        match.playedWithPartner &&
+        recordPartnerMatchup &&
+        match.teamA.length === 2 && 
+        match.teamB.length === 2) {
+      recordPartnerMatchup(
+        currentEventDay.id,
+        match.courtIndex,
+        match.teamA,
+        match.teamB
+      );
+    }
+
+    // Update the match
+    const updatedSchedule = currentEventDay.schedule.map(m =>
+      m.id === matchId
+        ? { ...m, scoreA, scoreB, winner, status: 'completed' }
+        : m
+    );
+
     updateEventDay(currentEventDay.id, {
-      schedule: currentEventDay.schedule.map(match =>
-        match.id === matchId
-          ? { ...match, scoreA, scoreB, winner, status: 'completed' }
-          : match
-      )
+      schedule: updatedSchedule
     });
 
+    // For mixed doubles, check if Round 1 is complete after this score
+    if (league.leagueMode === 'mixed_doubles' && match.roundNumber === 1 && !currentEventDay.round1Completed) {
+      const round1Matches = updatedSchedule.filter(m => m.roundNumber === 1);
+      const round1Complete = round1Matches.length > 0 && round1Matches.every(m => m.status === 'completed');
+      
+      if (round1Complete) {
+        // Calculate ladder movement for Round 1
+        const round1OnlyMatches = round1Matches;
+        const { movements } = calculateLadderMovement(
+          currentEventDay.courtAssignments,
+          round1OnlyMatches,
+          league.scoringSystem,
+          {
+            leagueMode: league.leagueMode || 'mixed_doubles',
+            partners: league.partners || {}
+          }
+        );
+
+        // Apply movement using nextCourt from movements
+        // Create map of player to new court
+        const playerNewCourt = {};
+        currentEventDay.courtAssignments.forEach((court, courtIndex) => {
+          court.forEach(playerId => {
+            playerNewCourt[playerId] = courtIndex;
+          });
+        });
+        
+        // Apply movements using nextCourt
+        movements.forEach(move => {
+          if (move.nextCourt !== undefined) {
+            playerNewCourt[move.playerId] = move.nextCourt;
+          }
+        });
+        
+        // Build new court assignments
+        let newCourtAssignments = [[], [], [], []];
+        Object.entries(playerNewCourt).forEach(([playerId, courtIndex]) => {
+          newCourtAssignments[courtIndex].push(parseInt(playerId));
+        });
+        
+        // Sort each court
+        newCourtAssignments.forEach(court => {
+          court.sort((a, b) => a - b);
+        });
+
+        // Ensure partners are split (not on same court) after Round 1
+        const partners = league.partners || {};
+        const partnerConflicts = [];
+        
+        // Find all partner conflicts
+        newCourtAssignments.forEach((court, courtIndex) => {
+          court.forEach(playerId => {
+            const partnerId = partners[playerId];
+            if (partnerId && court.includes(partnerId) && playerId < partnerId) {
+              // Found a conflict (only count once per pair)
+              partnerConflicts.push({ courtIndex, playerId, partnerId });
+            }
+          });
+        });
+
+        // Resolve conflicts by moving one partner to an adjacent court
+        partnerConflicts.forEach(({ courtIndex, playerId, partnerId }) => {
+          const court = newCourtAssignments[courtIndex];
+          const partnerIndex = court.indexOf(partnerId);
+          
+          if (partnerIndex !== -1) {
+            // Remove partner from current court
+            court.splice(partnerIndex, 1);
+            
+            // Try to move to adjacent court (prefer moving down to lower court)
+            let targetCourtIndex = courtIndex > 0 ? courtIndex - 1 : courtIndex + 1;
+            
+            // If target is full (4 players) or at bounds, try other direction
+            if (targetCourtIndex >= 4 || 
+                (targetCourtIndex < 4 && newCourtAssignments[targetCourtIndex].length >= 4 && courtIndex < 3)) {
+              targetCourtIndex = courtIndex < 3 ? courtIndex + 1 : courtIndex - 1;
+            }
+            
+            // Ensure target court index is valid
+            if (targetCourtIndex >= 0 && targetCourtIndex < 4) {
+              newCourtAssignments[targetCourtIndex].push(partnerId);
+            } else {
+              // Fallback: add back to original court if no valid target
+              court.push(partnerId);
+            }
+          }
+        });
+
+        // Generate rounds 2-6 with new court assignments
+        const getPlayerGender = (playerId) => {
+          const player = league.registeredPlayers.find(p => p.id === playerId);
+          return player?.gender || null;
+        };
+
+        const rounds2to6 = [];
+        let matchId = Math.max(...updatedSchedule.map(m => m.id)) + 1;
+        
+        newCourtAssignments.forEach((courtPlayers, courtIndex) => {
+          if (!courtPlayers || courtPlayers.length < 4) return;
+
+          // Generate rounds 2-6 for this court with partners split
+          const remainingRounds = generateMixedRounds(
+            courtPlayers,
+            partners,
+            getPlayerGender,
+            2,
+            6
+          );
+          
+          remainingRounds.forEach(round => {
+            rounds2to6.push({
+              id: matchId++,
+              courtIndex,
+              roundNumber: round.roundNumber,
+              teamA: round.teamA,
+              teamB: round.teamB,
+              sittingOut: round.sittingOut,
+              playedWithPartner: false,
+              scoreA: null,
+              scoreB: null,
+              winner: null,
+              status: 'pending'
+            });
+          });
+        });
+
+        // Update event day with Round 1 completed flag, new courts, and rounds 2-6
+        updateEventDay(currentEventDay.id, {
+          round1Completed: true,
+          postRound1CourtAssignments: newCourtAssignments,
+          schedule: [...updatedSchedule, ...rounds2to6]
+        });
+      }
+    }
+
     return true;
-  }, [currentEventDay, updateEventDay]);
+  }, [currentEventDay, updateEventDay, league, recordPartnerMatchup, calculateLadderMovement, applyMovementForMoneyRound]);
 
   // Clear a match score
   const clearMatchScore = useCallback((matchId) => {

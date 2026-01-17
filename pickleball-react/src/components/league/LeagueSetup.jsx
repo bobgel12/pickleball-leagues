@@ -46,6 +46,7 @@ export default function LeagueSetup({
   const [playerName, setPlayerName] = useState('');
   const [playerRating, setPlayerRating] = useState('');
   const [playerGender, setPlayerGender] = useState('');
+  const [usedRandomNames, setUsedRandomNames] = useState(new Set());
 
   const handleSaveConfig = () => {
     const parsedMaxPlayers = parseInt(maxPlayers) || LEAGUE_DEFAULTS.maxPlayers;
@@ -105,10 +106,69 @@ export default function LeagueSetup({
   };
 
   const handleAddRandom = () => {
-    const firstNames = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Cameron", "Drew"];
-    const lastNames = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis"];
-    const randomName = firstNames[Math.floor(Math.random() * firstNames.length)] + " " + 
-                       lastNames[Math.floor(Math.random() * lastNames.length)];
+    const firstNames = [
+      "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Cameron", "Drew",
+      "Jamie", "Quinn", "Sam", "Blake", "Dakota", "Hayden", "Avery", "Parker",
+      "Logan", "Sage", "Rowan", "River", "Phoenix", "Skyler", "Finley", "Reese",
+      "Ari", "Kai", "Noah", "Charlie", "Max", "Quinn", "Zoe", "Emma",
+      "Olivia", "Sophia", "Isabella", "Mia", "Charlotte", "Amelia", "Harper", "Evelyn",
+      "Abigail", "Emily", "Elizabeth", "Sofia", "Avery", "Ella", "Scarlett", "Grace",
+      "Chloe", "Victoria", "Riley", "Aria", "Lily", "Aurora", "Zoey", "Penelope",
+      "Layla", "Lillian", "Nora", "Hannah", "Addison", "Eleanor", "Natalie", "Luna",
+      "Savannah", "Leah", "Hazel", "Audrey", "Claire", "Lucy", "Skylar", "Violet"
+    ];
+    const lastNames = [
+      "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+      "Rodriguez", "Martinez", "Hernandez", "Lopez", "Wilson", "Anderson", "Thomas", "Taylor",
+      "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris", "Clark",
+      "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", "Scott",
+      "Torres", "Nguyen", "Hill", "Flores", "Green", "Adams", "Nelson", "Baker",
+      "Hall", "Rivera", "Campbell", "Mitchell", "Carter", "Roberts", "Gomez", "Phillips",
+      "Evans", "Turner", "Diaz", "Parker", "Cruz", "Edwards", "Collins", "Reyes",
+      "Stewart", "Morris", "Morales", "Murphy", "Cook", "Rogers", "Gutierrez", "Ortiz",
+      "Morgan", "Cooper", "Peterson", "Bailey", "Reed", "Kelly", "Howard", "Ramos"
+    ];
+    
+    // Get all existing player names (normalized to lowercase)
+    const existingNames = new Set(
+      league.registeredPlayers.map(p => p.name.toLowerCase())
+    );
+    
+    // Combine with previously used random names
+    const allUsedNames = new Set([...existingNames, ...usedRandomNames]);
+    
+    // Generate unique name
+    let randomName;
+    let attempts = 0;
+    const maxAttempts = 1000;
+    
+    do {
+      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+      const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+      randomName = `${firstName} ${lastName}`;
+      
+      if (attempts < maxAttempts && allUsedNames.has(randomName.toLowerCase())) {
+        // Try with number suffix
+        let suffix = 2;
+        let candidateName = `${firstName} ${lastName} ${suffix}`;
+        while (allUsedNames.has(candidateName.toLowerCase()) && suffix < 1000) {
+          suffix++;
+          candidateName = `${firstName} ${lastName} ${suffix}`;
+        }
+        randomName = candidateName;
+      }
+      
+      attempts++;
+      if (attempts >= maxAttempts) {
+        // Fallback: add timestamp to ensure uniqueness
+        randomName = `${firstName} ${lastName} ${Date.now()}`;
+        break;
+      }
+    } while (allUsedNames.has(randomName.toLowerCase()));
+    
+    // Update used names
+    setUsedRandomNames(prev => new Set([...prev, randomName.toLowerCase()]));
+    
     const randomRating = Math.round((Math.random() * 4 + 3) * 1000) / 1000; // 3.0 - 7.0
     const randomGender = leagueMode === LEAGUE_MODE.MIXED_DOUBLES 
       ? (Math.random() > 0.5 ? GENDER.MALE : GENDER.FEMALE)
@@ -633,7 +693,7 @@ export default function LeagueSetup({
             Partner Management
           </h2>
           <p style={{ color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
-            Assign partners for mixed doubles. Partners can only be changed between event days.
+            Assign partners for mixed doubles. Partners are locked for the entire league once the first event day is created.
           </p>
 
           {canModifyPartners && !canModifyPartners.canChange && (
@@ -653,10 +713,13 @@ export default function LeagueSetup({
               <button
                 className="btn primary"
                 onClick={() => {
-                  if (onAutoAssignPartners && onAutoAssignPartners()) {
-                    if (toast) toast.success('Partners auto-assigned based on ladder position');
-                  } else {
-                    if (toast) toast.error('Failed to auto-assign partners');
+                  if (onAutoAssignPartners) {
+                    const result = onAutoAssignPartners();
+                    if (result && result.success) {
+                      if (toast) toast.success(result.message || 'Partners auto-assigned based on ladder position');
+                    } else {
+                      if (toast) toast.error(result?.message || 'Failed to auto-assign partners');
+                    }
                   }
                 }}
                 disabled={!canModifyPartners || !canModifyPartners.canChange}
@@ -672,14 +735,54 @@ export default function LeagueSetup({
             <div style={{ marginTop: '20px' }}>
               <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Current Partnerships</h3>
               <div style={{ display: 'grid', gap: '12px' }}>
-                {league.registeredPlayers.map(player => {
-                  const partnerId = getPlayerPartner ? getPlayerPartner(player.id) : null;
-                  const partner = partnerId ? league.registeredPlayers.find(p => p.id === partnerId) : null;
+                {(() => {
+                  // Collect unique pairs (normalize to avoid duplicates)
+                  const displayedPairs = new Set();
+                  const pairs = [];
                   
-                  if (partnerId && !partner) return null; // Partner was removed
+                  league.registeredPlayers.forEach(player => {
+                    const partnerId = getPlayerPartner ? getPlayerPartner(player.id) : null;
+                    if (!partnerId) return;
+                    
+                    const partner = league.registeredPlayers.find(p => p.id === partnerId);
+                    if (!partner) return;
+                    
+                    // Normalize pair (always sort IDs: [minId, maxId])
+                    const normalizedPair = player.id < partnerId 
+                      ? `${player.id}-${partnerId}` 
+                      : `${partnerId}-${player.id}`;
+                    
+                    // Only add if not already displayed
+                    if (!displayedPairs.has(normalizedPair)) {
+                      displayedPairs.add(normalizedPair);
+                      
+                      // Determine order: female first
+                      let player1, player2;
+                      if (player.gender === GENDER.FEMALE) {
+                        player1 = player;
+                        player2 = partner;
+                      } else if (partner.gender === GENDER.FEMALE) {
+                        player1 = partner;
+                        player2 = player;
+                      } else {
+                        // If same gender (shouldn't happen, but fallback), use ID order
+                        player1 = player.id < partner.id ? player : partner;
+                        player2 = player.id < partner.id ? partner : player;
+                      }
+                      
+                      pairs.push({ player1, player2, key: normalizedPair });
+                    }
+                  });
                   
-                  return (
-                    <div key={player.id} style={{ 
+                  // Sort pairs for consistent display
+                  pairs.sort((a, b) => {
+                    const nameA = a.player1.name.toLowerCase();
+                    const nameB = b.player1.name.toLowerCase();
+                    return nameA.localeCompare(nameB);
+                  });
+                  
+                  return pairs.map(({ player1, player2, key }) => (
+                    <div key={key} style={{ 
                       padding: '12px 16px', 
                       background: 'var(--surface)', 
                       borderRadius: '8px',
@@ -689,46 +792,38 @@ export default function LeagueSetup({
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
                         <div>
-                          <strong>{player.name}</strong>
-                          {player.gender && (
+                          <strong>{player1.name}</strong>
+                          {player1.gender && (
                             <span style={{ 
                               marginLeft: '8px',
                               fontSize: '12px',
-                              color: player.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
+                              color: player1.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
                             }}>
-                              ({player.gender})
+                              ({player1.gender})
                             </span>
                           )}
                         </div>
-                        {partner ? (
-                          <>
-                            <span style={{ color: 'var(--text-secondary)' }}>↔</span>
-                            <div>
-                              <strong>{partner.name}</strong>
-                              {partner.gender && (
-                                <span style={{ 
-                                  marginLeft: '8px',
-                                  fontSize: '12px',
-                                  color: partner.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
-                                }}>
-                                  ({partner.gender})
-                                </span>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                            No partner assigned
-                          </span>
-                        )}
+                        <span style={{ color: 'var(--text-secondary)' }}>↔</span>
+                        <div>
+                          <strong>{player2.name}</strong>
+                          {player2.gender && (
+                            <span style={{ 
+                              marginLeft: '8px',
+                              fontSize: '12px',
+                              color: player2.gender === GENDER.MALE ? '#3b82f6' : '#ec4899'
+                            }}>
+                              ({player2.gender})
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {partner && onRemovePartner && canModifyPartners && canModifyPartners.canChange && (
+                      {onRemovePartner && canModifyPartners && canModifyPartners.canChange && (
                         <button
                           className="btn"
                           style={{ padding: '6px 12px', marginLeft: '12px' }}
                           onClick={() => {
-                            if (window.confirm(`Remove partnership between ${player.name} and ${partner.name}?`)) {
-                              if (onRemovePartner(player.id)) {
+                            if (window.confirm(`Remove partnership between ${player1.name} and ${player2.name}?`)) {
+                              if (onRemovePartner(player1.id)) {
                                 if (toast) toast.success('Partnership removed');
                               }
                             }
@@ -738,8 +833,8 @@ export default function LeagueSetup({
                         </button>
                       )}
                     </div>
-                  );
-                })}
+                  ));
+                })()}
               </div>
 
               {/* Manual Partner Assignment */}

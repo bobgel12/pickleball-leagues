@@ -2,7 +2,7 @@
  * useLeagueState - State management hook for Ladder League
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   saveLeague,
   loadLeague,
@@ -20,38 +20,204 @@ import {
   setPartner,
   validatePartnership,
   autoAssignPartners,
-  canChangePartners
+  canChangePartners,
+  normalizePartnerPair,
+  saveClubToLocalStorage,
+  loadClubFromLocalStorage,
+  clearClub,
+  createDefaultClub,
+  normalizeClub
 } from '../utils/leagueStorage.js';
+import { loadLeagueData, saveLeagueData } from '../utils/apiStorage.js';
+import {
+  fetchClubById,
+  fetchAllClubs,
+  createClub as createClubApi,
+  updateClub as updateClubApi,
+  deleteClub as deleteClubApi,
+  searchClubs
+} from '../utils/clubApi.js';
 import { LEAGUE_STATUS, EVENT_DAY_STATUS, DEFAULT_DUPR_RATING } from '../utils/constants.js';
 
 export function useLeagueState() {
   const [league, setLeague] = useState(() => {
-    const loaded = loadLeague();
-    return loaded || createDefaultLeague();
+    // Start with default, will load from API if club is selected
+    return createDefaultLeague();
   });
 
-  const [playerIdCounter, setPlayerIdCounter] = useState(() => {
-    const loaded = loadLeague();
-    if (loaded && loaded.registeredPlayers.length > 0) {
-      const maxId = Math.max(...loaded.registeredPlayers.map(p => p.id));
-      return maxId + 1;
+  const [isLoading, setIsLoading] = useState(true);
+  const saveTimeoutRef = useRef(null);
+
+  const [club, setClub] = useState(() => {
+    // Try to load from localStorage cache first (for immediate UI render)
+    const loadedLeague = loadLeague();
+    if (loadedLeague && loadedLeague.clubId) {
+      const cachedClub = loadClubFromLocalStorage(loadedLeague.clubId);
+      if (cachedClub) {
+        return cachedClub;
+      }
     }
+    // Fallback to default club cache
+    const defaultClub = loadClubFromLocalStorage();
+    return defaultClub || null;
+  });
+
+  // Load club from database on mount if clubId exists
+  useEffect(() => {
+    if (league.clubId && (!club || club.id !== league.clubId)) {
+      // Load from database asynchronously
+      fetchClubById(league.clubId)
+        .then((dbClub) => {
+          if (dbClub) {
+            setClub(dbClub);
+            // Cache in localStorage
+            saveClubToLocalStorage(dbClub);
+          }
+        })
+        .catch((error) => {
+          console.warn('Failed to load club from database, using cache:', error);
+        });
+    }
+  }, [league.clubId]); // Only run when clubId changes
+
+  const [playerIdCounter, setPlayerIdCounter] = useState(() => {
     return 1;
   });
 
   const [eventDayIdCounter, setEventDayIdCounter] = useState(() => {
-    const loaded = loadLeague();
-    if (loaded && loaded.eventDays.length > 0) {
-      const maxId = Math.max(...loaded.eventDays.map(d => d.id));
-      return maxId + 1;
-    }
     return 1;
   });
 
-  // Auto-save on league changes
+  // Track club slug to reload data when it changes
+  const [clubSlug, setClubSlug] = useState(() => {
+    return sessionStorage.getItem('pickleball_club_slug') ||
+           localStorage.getItem('pickleball_club_slug') ||
+           null;
+  });
+
+  // Watch for club slug changes in storage
   useEffect(() => {
+    const checkClubSlug = () => {
+      const currentSlug = sessionStorage.getItem('pickleball_club_slug') ||
+                         localStorage.getItem('pickleball_club_slug') ||
+                         null;
+      if (currentSlug !== clubSlug) {
+        setClubSlug(currentSlug);
+      }
+    };
+
+    // Check immediately
+    checkClubSlug();
+
+    // Poll for changes (storage events don't work across tabs in all browsers)
+    const interval = setInterval(checkClubSlug, 500);
+
+    // Also listen to storage events
+    const handleStorageChange = (e) => {
+      if (e.key === 'pickleball_club_slug') {
+        checkClubSlug();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [clubSlug]);
+
+  // Load from API on mount and when club slug changes
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const loaded = await loadLeagueData();
+        if (loaded) {
+          const normalized = normalizeLeagueState(loaded);
+          setLeague(normalized);
+          
+          // Update counters
+          if (normalized.registeredPlayers.length > 0) {
+            const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
+            setPlayerIdCounter(maxPlayerId + 1);
+          }
+          if (normalized.eventDays.length > 0) {
+            const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
+            setEventDayIdCounter(maxDayId + 1);
+          }
+        } else {
+          // Fallback to localStorage
+          const localData = loadLeague();
+          if (localData) {
+            setLeague(localData);
+            if (localData.registeredPlayers.length > 0) {
+              const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
+              setPlayerIdCounter(maxId + 1);
+            }
+            if (localData.eventDays.length > 0) {
+              const maxId = Math.max(...localData.eventDays.map(d => d.id));
+              setEventDayIdCounter(maxId + 1);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading league data:', error);
+        // Fallback to localStorage
+        const localData = loadLeague();
+        if (localData) {
+          setLeague(localData);
+          if (localData.registeredPlayers.length > 0) {
+            const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
+            setPlayerIdCounter(maxId + 1);
+          }
+          if (localData.eventDays.length > 0) {
+            const maxId = Math.max(...localData.eventDays.map(d => d.id));
+            setEventDayIdCounter(maxId + 1);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [clubSlug]);
+
+  // Auto-save on league changes (debounced)
+  useEffect(() => {
+    if (isLoading) return; // Don't save during initial load
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Save to localStorage immediately (fallback)
     saveLeague(league);
-  }, [league]);
+
+    // Debounce API save to avoid too many requests
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveLeagueData(league);
+      } catch (error) {
+        console.error('Error saving league data to API:', error);
+        // localStorage already saved as fallback
+      }
+    }, 1000); // 1 second debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [league, isLoading]);
+
+  // Cache club in localStorage when it changes (database is primary)
+  useEffect(() => {
+    if (club) {
+      saveClubToLocalStorage(club);
+    }
+  }, [club]);
 
   // Generate unique player ID
   const generatePlayerId = useCallback(() => {
@@ -617,17 +783,187 @@ export function useLeagueState() {
     const changeCheck = canChangePartners(league);
     if (!changeCheck.canChange) {
       console.warn('Cannot change partners:', changeCheck.reason);
-      return false;
+      return { success: false, message: changeCheck.reason };
     }
 
-    setLeague(prev => autoAssignPartners(prev));
-    return true;
+    const result = autoAssignPartners(league);
+    if (result.success) {
+      setLeague(result.league);
+    }
+    return { success: result.success, message: result.message };
   }, [league]);
 
   // Check if partners can be changed
   const canModifyPartners = useCallback(() => {
     return canChangePartners(league);
   }, [league]);
+
+  // ==========================================
+  // CLUB MANAGEMENT (Database Integration)
+  // ==========================================
+
+  // Load club from database by ID
+  const loadClubById = useCallback(async (clubId) => {
+    try {
+      const dbClub = await fetchClubById(clubId);
+      if (dbClub) {
+        setClub(dbClub);
+        saveClubToLocalStorage(dbClub);
+        return dbClub;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading club from database:', error);
+      // Fallback to cache
+      const cached = loadClubFromLocalStorage(clubId);
+      if (cached) {
+        setClub(cached);
+        return cached;
+      }
+      return null;
+    }
+  }, []);
+
+  // Fetch all clubs from database
+  const fetchClubs = useCallback(async () => {
+    try {
+      const clubs = await fetchAllClubs();
+      return clubs;
+    } catch (error) {
+      console.error('Error fetching clubs from database:', error);
+      return [];
+    }
+  }, []);
+
+  // Create new club in database
+  const createClub = useCallback(async (clubData) => {
+    try {
+      const newClub = await createClubApi(clubData);
+      setClub(newClub);
+      
+      // Link club to league
+      if (!league.clubId && newClub.id) {
+        setLeague(prev => ({
+          ...prev,
+          clubId: newClub.id
+        }));
+      }
+      
+      return newClub;
+    } catch (error) {
+      console.error('Error creating club in database:', error);
+      throw error;
+    }
+  }, [league.clubId]);
+
+  // Update club in database
+  const updateClub = useCallback(async (clubId, clubData) => {
+    try {
+      const updatedClub = await updateClubApi(clubId, clubData);
+      setClub(updatedClub);
+      saveClubToLocalStorage(updatedClub);
+      
+      // Ensure club is linked to league
+      if (!league.clubId && updatedClub.id) {
+        setLeague(prev => ({
+          ...prev,
+          clubId: updatedClub.id
+        }));
+      }
+      
+      return updatedClub;
+    } catch (error) {
+      console.error('Error updating club in database:', error);
+      // Fallback: update local state and cache
+      const updatedClub = { ...club, ...clubData, updatedAt: Date.now() };
+      setClub(updatedClub);
+      saveClubToLocalStorage(updatedClub);
+      throw error;
+    }
+  }, [club, league.clubId]);
+
+  // Update club information (convenience wrapper - creates if doesn't exist)
+  const updateOrCreateClub = useCallback(async (clubData) => {
+    if (club && club.id) {
+      // Update existing club
+      return await updateClub(club.id, clubData);
+    } else {
+      // Create new club
+      return await createClub(clubData);
+    }
+  }, [club, updateClub, createClub]);
+
+  // Set club for league (by ID - assumes club exists in database)
+  const setLeagueClub = useCallback(async (clubId) => {
+    setLeague(prev => ({
+      ...prev,
+      clubId
+    }));
+    
+    // Load club from database
+    if (clubId) {
+      await loadClubById(clubId);
+    } else {
+      setClub(null);
+    }
+  }, [loadClubById]);
+
+  // Get club information (returns current club state)
+  const getClub = useCallback(() => {
+    return club;
+  }, [club]);
+
+  // Search clubs in database
+  const searchClubsInDatabase = useCallback(async (query) => {
+    try {
+      const clubs = await searchClubs(query);
+      return clubs;
+    } catch (error) {
+      console.error('Error searching clubs:', error);
+      return [];
+    }
+  }, []);
+
+  // Clear club information
+  const resetClub = useCallback(async () => {
+    try {
+      if (club && club.id) {
+        await deleteClubApi(club.id);
+      }
+    } catch (error) {
+      console.error('Error deleting club from database:', error);
+    }
+    
+    clearClub();
+    setClub(null);
+    setLeague(prev => ({
+      ...prev,
+      clubId: null
+    }));
+  }, [club]);
+
+  // Record a partner pair matchup (when Round 1 match is scored)
+  const recordPartnerMatchup = useCallback((eventDayId, courtIndex, pair1Ids, pair2Ids) => {
+    setLeague(prev => {
+      const newMatchup = {
+        pair1: normalizePartnerPair(pair1Ids[0], pair1Ids[1]),
+        pair2: normalizePartnerPair(pair2Ids[0], pair2Ids[1]),
+        eventDayId,
+        courtIndex,
+        createdAt: Date.now()
+      };
+
+      return {
+        ...prev,
+        partnerMatchups: [
+          ...(prev.partnerMatchups || []),
+          newMatchup
+        ]
+      };
+    });
+
+    return true;
+  }, []);
 
   return {
     league,
@@ -678,7 +1014,20 @@ export function useLeagueState() {
     assignPartner,
     removePartner,
     autoAssignPartnersToLeague,
-    canModifyPartners
+    canModifyPartners,
+    recordPartnerMatchup,
+
+    // Club Management (Database Integration)
+    club,
+    getClub,
+    createClub,
+    updateClub,
+    updateOrCreateClub,
+    loadClubById,
+    setLeagueClub,
+    resetClub,
+    fetchClubs,
+    searchClubsInDatabase
   };
 }
 

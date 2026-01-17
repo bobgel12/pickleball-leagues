@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Storage } from '../utils/storage.js';
+import { loadTournamentData, saveTournamentData } from '../utils/apiStorage.js';
 import { createDefaultState, normalizeStateStructure, generateTournamentName, createDefaultTournament } from '../utils/helpers.js';
 
 export function useAppState() {
   const [state, setState] = useState(() => {
-    const loaded = Storage.load();
-    if (loaded) {
-      return normalizeStateStructure(loaded);
-    }
+    // Start with default state, will load from API if club is selected
     const defaultState = createDefaultState();
     if (defaultState.tournaments.length === 0) {
       const firstTournament = createDefaultTournament({ id: 1, name: "Tournament 1" });
@@ -17,10 +15,108 @@ export function useAppState() {
     return defaultState;
   });
 
-  // Auto-save on state changes
+  const [isLoading, setIsLoading] = useState(true);
+  const saveTimeoutRef = useRef(null);
+  
+  // Track club slug to reload data when it changes
+  const [clubSlug, setClubSlug] = useState(() => {
+    return sessionStorage.getItem('pickleball_club_slug') ||
+           localStorage.getItem('pickleball_club_slug') ||
+           null;
+  });
+
+  // Watch for club slug changes in storage
   useEffect(() => {
+    const checkClubSlug = () => {
+      const currentSlug = sessionStorage.getItem('pickleball_club_slug') ||
+                         localStorage.getItem('pickleball_club_slug') ||
+                         null;
+      if (currentSlug !== clubSlug) {
+        setClubSlug(currentSlug);
+      }
+    };
+
+    // Check immediately
+    checkClubSlug();
+
+    // Poll for changes (storage events don't work across tabs in all browsers)
+    const interval = setInterval(checkClubSlug, 500);
+
+    // Also listen to storage events
+    const handleStorageChange = (e) => {
+      if (e.key === 'pickleball_club_slug') {
+        checkClubSlug();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [clubSlug]);
+
+  // Load from API on mount and when club slug changes
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const loaded = await loadTournamentData();
+        if (loaded) {
+          const normalized = normalizeStateStructure(loaded);
+          setState(normalized);
+        } else {
+          // Fallback to localStorage if no API data
+          const localData = Storage.load();
+          if (localData) {
+            const normalized = normalizeStateStructure(localData);
+            setState(normalized);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading tournament data:', error);
+        // Fallback to localStorage
+        const localData = Storage.load();
+        if (localData) {
+          const normalized = normalizeStateStructure(localData);
+          setState(normalized);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [clubSlug]);
+
+  // Auto-save on state changes (debounced)
+  useEffect(() => {
+    if (isLoading) return; // Don't save during initial load
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Save to localStorage immediately (fallback)
     Storage.save(state);
-  }, [state]);
+
+    // Debounce API save to avoid too many requests
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveTournamentData(state);
+      } catch (error) {
+        console.error('Error saving tournament data to API:', error);
+        // localStorage already saved as fallback
+      }
+    }, 1000); // 1 second debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [state, isLoading]);
 
   const ensureActiveTournament = useCallback(() => {
     setState(prev => {

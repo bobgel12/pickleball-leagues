@@ -5,6 +5,9 @@
  * For 5 players, this creates 5 rounds with 1 match each (4 players play, 1 sits out).
  */
 
+// Import partner matchup helpers (if needed)
+// Note: We'll import normalizePartnerPair and havePartnersPlayed from leagueStorage when generating Round 1
+
 /**
  * Generate all unique pairings for a set of players
  * @param {Array} players - Array of player IDs
@@ -211,9 +214,138 @@ export function generateMixedDoublesSchedule(courtPlayers, partners, getPlayerGe
 }
 
 /**
- * Generate Round 1 matches using assigned partners
+ * Generate Round 1 matches: Partner pair vs partner pair across all checked-in players
+ * @param {Array} allCheckedInPlayers - All player IDs who checked in for the event day
+ * @param {Object} partners - Partners object { [playerId]: partnerId }
+ * @param {Array} partnerMatchups - Array of previous matchups to avoid duplicates
+ * @returns {Array} Array of matches to distribute across courts: { teamA: [id1, id2], teamB: [id3, id4], courtIndex: number }
+ */
+function generateRound1PartnerPairMatchups(allCheckedInPlayers, partners, partnerMatchups = []) {
+  if (!allCheckedInPlayers || allCheckedInPlayers.length < 4) {
+    return [];
+  }
+
+  // Helper to normalize partner pair (always sorted)
+  const normalizePair = (id1, id2) => id1 < id2 ? [id1, id2] : [id2, id1];
+
+  // Helper to check if two pairs have played
+  const havePlayed = (pair1Ids, pair2Ids) => {
+    const norm1 = normalizePair(pair1Ids[0], pair1Ids[1]);
+    const norm2 = normalizePair(pair2Ids[0], pair2Ids[1]);
+    
+    return partnerMatchups.some(matchup => {
+      const m1 = normalizePair(matchup.pair1[0], matchup.pair1[1]);
+      const m2 = normalizePair(matchup.pair2[0], matchup.pair2[1]);
+      
+      return (
+        (norm1[0] === m1[0] && norm1[1] === m1[1] && norm2[0] === m2[0] && norm2[1] === m2[1]) ||
+        (norm1[0] === m2[0] && norm1[1] === m2[1] && norm2[0] === m1[0] && norm2[1] === m1[1])
+      );
+    });
+  };
+
+  // Extract all partner pairs from checked-in players
+  const usedPlayers = new Set();
+  const partnerPairs = [];
+  
+  allCheckedInPlayers.forEach(playerId => {
+    if (usedPlayers.has(playerId)) return;
+    
+    const partnerId = partners[playerId];
+    if (partnerId && allCheckedInPlayers.includes(partnerId) && !usedPlayers.has(partnerId)) {
+      partnerPairs.push(normalizePair(playerId, partnerId));
+      usedPlayers.add(playerId);
+      usedPlayers.add(partnerId);
+    }
+  });
+
+  // Check if all pairs have played each other
+  if (partnerPairs.length < 2) {
+    // Not enough pairs, skip Round 1
+    return [];
+  }
+
+  // Check if all pairs have played each other
+  const allPairsPlayed = partnerPairs.every(pair1 => {
+    const hasUnplayedOpponent = partnerPairs.some(pair2 => {
+      if (pair1[0] === pair2[0] && pair1[1] === pair2[1]) return false; // Same pair
+      return !havePlayed(pair1, pair2);
+    });
+    return !hasUnplayedOpponent;
+  });
+
+  // If all pairs have played each other, skip Round 1
+  if (allPairsPlayed && partnerMatchups.length > 0) {
+    return [];
+  }
+
+  // Match each pair with an unplayed pair
+  const matches = [];
+  const usedPairs = new Set();
+  
+  // Handle odd number of pairs - last one sits out Round 1
+  const sittingOutPairIndex = partnerPairs.length % 2 === 1 ? partnerPairs.length - 1 : -1;
+
+  // Process pairs in order, matching with unplayed opponents
+  for (let i = 0; i < partnerPairs.length; i++) {
+    if (usedPairs.has(i)) continue;
+    if (i === sittingOutPairIndex) continue; // Skip sitting out pair
+
+    const pair1 = partnerPairs[i];
+    let matched = false;
+
+    // Try to find an unplayed pair first
+    for (let j = i + 1; j < partnerPairs.length; j++) {
+      if (usedPairs.has(j)) continue;
+      if (j === sittingOutPairIndex) continue; // Skip sitting out pair
+
+      const pair2 = partnerPairs[j];
+      if (!havePlayed(pair1, pair2)) {
+        matches.push({
+          teamA: pair1,
+          teamB: pair2,
+          sittingOut: null
+        });
+        usedPairs.add(i);
+        usedPairs.add(j);
+        matched = true;
+        break;
+      }
+    }
+
+    // If no unplayed pair found, use first available pair (least recently played)
+    if (!matched) {
+      for (let j = i + 1; j < partnerPairs.length; j++) {
+        if (usedPairs.has(j)) continue;
+        if (j === sittingOutPairIndex) continue; // Skip sitting out pair
+
+        const pair2 = partnerPairs[j];
+        matches.push({
+          teamA: pair1,
+          teamB: pair2,
+          sittingOut: null
+        });
+        usedPairs.add(i);
+        usedPairs.add(j);
+        matched = true;
+        break;
+      }
+    }
+  }
+
+  // Note: If odd number of pairs, one pair sits out Round 1
+  // They will join rounds 2-6 when partners split
+
+  return matches;
+}
+
+/**
+ * Generate Round 1 matches using assigned partners (per court - legacy support)
+ * This is now primarily used as a fallback, but Round 1 is generated at event day level
  */
 function generateRound1WithPartners(courtPlayers, partners) {
+  // This function is kept for backward compatibility but Round 1 is now generated
+  // at the event day level for mixed doubles
   const usedPlayers = new Set();
   const partnerPairs = [];
   const unpaired = [];
@@ -245,20 +377,6 @@ function generateRound1WithPartners(courtPlayers, partners) {
       teamB,
       sittingOut
     }];
-  } else if (partnerPairs.length === 1 && unpaired.length >= 2) {
-    // One pair and at least 2 unpaired - pair them up
-    return [{
-      teamA: partnerPairs[0],
-      teamB: unpaired.slice(0, 2),
-      sittingOut: unpaired.length > 2 ? unpaired[2] : null
-    }];
-  } else if (unpaired.length >= 4) {
-    // No partners, just create mixed teams from unpaired
-    return [{
-      teamA: unpaired.slice(0, 2),
-      teamB: unpaired.slice(2, 4),
-      sittingOut: unpaired.length > 4 ? unpaired[4] : null
-    }];
   }
   
   // Fallback: use regular round-robin for round 1
@@ -267,10 +385,10 @@ function generateRound1WithPartners(courtPlayers, partners) {
 
 /**
  * Generate subsequent rounds with mixed teams (1 man + 1 woman)
- * Round 2: Partners must be separated (immediate round after Round 1)
- * Round 3+: Normal mixed teams (partners can play together if naturally paired)
+ * Generates exactly 5 rounds (rounds 2-6) with partners split
+ * All rounds must separate assigned partners and maintain mixed teams
  */
-function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRoundNumber) {
+export function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRoundNumber, maxRoundNumber = 6) {
   const rounds = [];
   const men = [];
   const women = [];
@@ -289,25 +407,25 @@ function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRound
   if (men.length === 0 || women.length === 0) {
     // Fallback to regular round-robin if gender balance is off
     const regularSchedule = generateRoundRobinSchedule(courtPlayers);
-    return regularSchedule.slice(1).map((round, idx) => ({
+    const numRounds = maxRoundNumber - startRoundNumber + 1;
+    return regularSchedule.slice(1, numRounds + 1).map((round, idx) => ({
       ...round,
       roundNumber: startRoundNumber + idx,
       playedWithPartner: false
     }));
   }
   
-  // Generate mixed teams based on ladder position
-  // Pair top man with top woman, second man with second woman, etc.
-  const maxRounds = Math.max(men.length, women.length);
+  // Generate exactly 5 rounds (rounds 2-6)
+  const numRounds = maxRoundNumber - startRoundNumber + 1; // Should be 5 rounds (2-6)
   
-  for (let roundNum = 0; roundNum < maxRounds; roundNum++) {
+  for (let roundNum = 0; roundNum < numRounds; roundNum++) {
     const roundTeams = [];
     const usedMen = new Set();
     const usedWomen = new Set();
     const actualRoundNumber = startRoundNumber + roundNum;
-    const isRound2 = actualRoundNumber === 2; // Round 2 must separate partners
     
-    // Create mixed teams
+    // All rounds (2-6) must separate assigned partners
+    // Create mixed teams with partners split
     for (let i = 0; i < Math.min(men.length, women.length); i++) {
       const manIndex = (roundNum + i) % men.length;
       const womanIndex = (roundNum + i) % women.length;
@@ -315,49 +433,40 @@ function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRound
       const manId = men[manIndex];
       const womanId = women[womanIndex];
       
-      // Round 2: Explicitly avoid pairing assigned partners
-      if (isRound2) {
-        const isAssignedPartner = partners[manId] === womanId || partners[womanId] === manId;
-        if (isAssignedPartner) {
-          // Try to find alternative pairing
-          let foundAlternative = false;
-          for (let altWomanIndex = 0; altWomanIndex < women.length; altWomanIndex++) {
-            const altWomanId = women[(womanIndex + altWomanIndex + 1) % women.length];
-            const altIsPartner = partners[manId] === altWomanId || partners[altWomanId] === manId;
-            if (!usedWomen.has(altWomanId) && !altIsPartner) {
-              roundTeams.push([manId, altWomanId]);
-              usedMen.add(manId);
-              usedWomen.add(altWomanId);
+      // Always avoid pairing assigned partners in rounds 2-6
+      const isAssignedPartner = partners[manId] === womanId || partners[womanId] === manId;
+      if (isAssignedPartner) {
+        // Try to find alternative pairing (different woman)
+        let foundAlternative = false;
+        for (let altWomanIndex = 0; altWomanIndex < women.length; altWomanIndex++) {
+          const altWomanId = women[(womanIndex + altWomanIndex + 1) % women.length];
+          const altIsPartner = partners[manId] === altWomanId || partners[altWomanId] === manId;
+          if (!usedWomen.has(altWomanId) && !altIsPartner) {
+            roundTeams.push([manId, altWomanId]);
+            usedMen.add(manId);
+            usedWomen.add(altWomanId);
+            foundAlternative = true;
+            break;
+          }
+        }
+        // If no alternative woman found, try alternative man
+        if (!foundAlternative) {
+          for (let altManIndex = 0; altManIndex < men.length; altManIndex++) {
+            const altManId = men[(manIndex + altManIndex + 1) % men.length];
+            const altIsPartner = partners[altManId] === womanId || partners[womanId] === altManId;
+            if (!usedMen.has(altManId) && !altIsPartner) {
+              roundTeams.push([altManId, womanId]);
+              usedMen.add(altManId);
+              usedWomen.add(womanId);
               foundAlternative = true;
               break;
             }
           }
-          // If no alternative found, try alternative man
-          if (!foundAlternative) {
-            for (let altManIndex = 0; altManIndex < men.length; altManIndex++) {
-              const altManId = men[(manIndex + altManIndex + 1) % men.length];
-              const altIsPartner = partners[altManId] === womanId || partners[womanId] === altManId;
-              if (!usedMen.has(altManId) && !altIsPartner) {
-                roundTeams.push([altManId, womanId]);
-                usedMen.add(altManId);
-                usedWomen.add(womanId);
-                foundAlternative = true;
-                break;
-              }
-            }
-          }
-          // If still no alternative, skip this pairing (edge case)
-          if (!foundAlternative) continue;
-        } else {
-          // Not partners, can pair normally
-          if (!usedMen.has(manId) && !usedWomen.has(womanId)) {
-            roundTeams.push([manId, womanId]);
-            usedMen.add(manId);
-            usedWomen.add(womanId);
-          }
         }
+        // If still no alternative, skip this pairing (edge case - should be rare)
+        if (!foundAlternative) continue;
       } else {
-        // Round 3+: Normal pairing (partners can play together if naturally paired)
+        // Not partners, can pair normally
         if (!usedMen.has(manId) && !usedWomen.has(womanId)) {
           roundTeams.push([manId, womanId]);
           usedMen.add(manId);
@@ -392,46 +501,95 @@ function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRound
 /**
  * Generate the full schedule for an event day (all 4 courts)
  * @param {Array} courtAssignments - Array of 4 arrays, each containing player IDs for that court
- * @param {Object} options - Options object with leagueMode, partners, getPlayerGender
+ * @param {Object} options - Options object with leagueMode, partners, getPlayerGender, partnerMatchups
  * @returns {Array} Array of all matches across all courts
  */
 export function generateEventDaySchedule(courtAssignments, options = {}) {
-  const { leagueMode, partners = {}, getPlayerGender = () => null } = options;
+  const { leagueMode, partners = {}, getPlayerGender = () => null, partnerMatchups = [] } = options;
   const allMatches = [];
   let matchId = 1;
 
-  courtAssignments.forEach((courtPlayers, courtIndex) => {
-    if (!courtPlayers || courtPlayers.length < 4) return;
+  // For mixed doubles, generate Round 1 at event day level (partner pair vs partner pair)
+  if (leagueMode === 'mixed_doubles') {
+    // Extract all checked-in players from court assignments
+    const allCheckedInPlayers = courtAssignments.flat().filter(Boolean);
+    
+    // Generate Round 1 partner pair matchups across all players
+    const round1Matches = generateRound1PartnerPairMatchups(allCheckedInPlayers, partners, partnerMatchups);
+    
+    // Distribute Round 1 matches to courts
+    const round1ByCourt = [[], [], [], []]; // Matches per court
+    round1Matches.forEach((match, index) => {
+      const courtIndex = index % 4;
+      round1ByCourt[courtIndex].push(match);
+    });
 
-    let courtSchedule;
-    
-    if (leagueMode === 'mixed_doubles') {
-      courtSchedule = generateMixedDoublesSchedule(courtPlayers, partners, getPlayerGender);
-    } else {
-      courtSchedule = generateRoundRobinSchedule(courtPlayers);
-      // Mark all as not with partner for regular leagues
-      courtSchedule = courtSchedule.map(round => ({
-        ...round,
-        playedWithPartner: false
-      }));
-    }
-    
-    courtSchedule.forEach(round => {
-      allMatches.push({
-        id: matchId++,
-        courtIndex,
-        roundNumber: round.roundNumber,
-        teamA: round.teamA,
-        teamB: round.teamB,
-        sittingOut: round.sittingOut,
-        playedWithPartner: round.playedWithPartner || false,
-        scoreA: null,
-        scoreB: null,
-        winner: null,
-        status: 'pending'
+    // Add Round 1 matches to schedule
+    round1ByCourt.forEach((matches, courtIndex) => {
+      matches.forEach(match => {
+        allMatches.push({
+          id: matchId++,
+          courtIndex,
+          roundNumber: 1,
+          teamA: match.teamA,
+          teamB: match.teamB,
+          sittingOut: match.sittingOut,
+          playedWithPartner: true, // Round 1 is always with partner
+          scoreA: null,
+          scoreB: null,
+          winner: null,
+          status: 'pending'
+        });
       });
     });
-  });
+
+    // Generate rounds 2-6 per court (partners split, mixed teams)
+    courtAssignments.forEach((courtPlayers, courtIndex) => {
+      if (!courtPlayers || courtPlayers.length < 4) return;
+
+      // Generate rounds 2-6 for this court
+      const remainingRounds = generateMixedRounds(courtPlayers, partners, getPlayerGender, 2, 6);
+      
+      remainingRounds.forEach(round => {
+        allMatches.push({
+          id: matchId++,
+          courtIndex,
+          roundNumber: round.roundNumber,
+          teamA: round.teamA,
+          teamB: round.teamB,
+          sittingOut: round.sittingOut,
+          playedWithPartner: false, // Rounds 2-6 are without assigned partner
+          scoreA: null,
+          scoreB: null,
+          winner: null,
+          status: 'pending'
+        });
+      });
+    });
+  } else {
+    // Regular league: generate per court as before
+    courtAssignments.forEach((courtPlayers, courtIndex) => {
+      if (!courtPlayers || courtPlayers.length < 4) return;
+
+      const courtSchedule = generateRoundRobinSchedule(courtPlayers);
+      // Mark all as not with partner for regular leagues
+      courtSchedule.forEach(round => {
+        allMatches.push({
+          id: matchId++,
+          courtIndex,
+          roundNumber: round.roundNumber,
+          teamA: round.teamA,
+          teamB: round.teamB,
+          sittingOut: round.sittingOut,
+          playedWithPartner: false,
+          scoreA: null,
+          scoreB: null,
+          winner: null,
+          status: 'pending'
+        });
+      });
+    });
+  }
 
   return allMatches;
 }
