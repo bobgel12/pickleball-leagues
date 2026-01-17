@@ -591,31 +591,145 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
       });
     });
   } else {
-    // Regular league: generate per court as before
+    // Regular league: generate only Round 1 initially (round-by-round)
     courtAssignments.forEach((courtPlayers, courtIndex) => {
       if (!courtPlayers || courtPlayers.length < 4) return;
 
-      const courtSchedule = generateRoundRobinSchedule(courtPlayers);
-      // Mark all as not with partner for regular leagues
-      courtSchedule.forEach(round => {
+      // Generate only Round 1 for regular league
+      const round1Schedule = generateRoundRobinSchedule(courtPlayers);
+      if (round1Schedule.length > 0) {
+        const round1 = round1Schedule[0];
         allMatches.push({
           id: matchId++,
           courtIndex,
-          roundNumber: round.roundNumber,
-          teamA: round.teamA,
-          teamB: round.teamB,
-          sittingOut: round.sittingOut,
+          roundNumber: 1,
+          teamA: round1.teamA,
+          teamB: round1.teamB,
+          sittingOut: round1.sittingOut,
           playedWithPartner: false,
           scoreA: null,
           scoreB: null,
           winner: null,
           status: 'pending'
         });
-      });
+      }
     });
   }
 
   return allMatches;
+}
+
+/**
+ * Get previous round partners for a court
+ * @param {Array} schedule - Full event day schedule
+ * @param {number} courtIndex - Court index (0-3)
+ * @param {number} previousRoundNumber - Previous round number
+ * @returns {Array} Array of partner pairs [[id1, id2], [id3, id4]]
+ */
+export function getPreviousRoundPartners(schedule, courtIndex, previousRoundNumber) {
+  const previousRoundMatches = schedule.filter(
+    m => m.courtIndex === courtIndex && m.roundNumber === previousRoundNumber && m.status === 'completed'
+  );
+  
+  const partners = [];
+  previousRoundMatches.forEach(match => {
+    if (match.teamA.length === 2) {
+      partners.push([match.teamA[0], match.teamA[1]].sort((a, b) => a - b));
+    }
+    if (match.teamB.length === 2) {
+      partners.push([match.teamB[0], match.teamB[1]].sort((a, b) => a - b));
+    }
+  });
+  
+  return partners;
+}
+
+/**
+ * Check if two players were partners in previous round
+ * @param {Array} previousPartners - Array of partner pairs from getPreviousRoundPartners
+ * @param {number} playerId1 - First player ID
+ * @param {number} playerId2 - Second player ID
+ * @returns {boolean} True if they were partners
+ */
+function werePartners(previousPartners, playerId1, playerId2) {
+  const sortedPair = [playerId1, playerId2].sort((a, b) => a - b);
+  return previousPartners.some(pair => 
+    pair[0] === sortedPair[0] && pair[1] === sortedPair[1]
+  );
+}
+
+/**
+ * Generate next round for regular league with partner splitting
+ * @param {Array} courtPlayers - Array of player IDs on the court
+ * @param {Array} previousPartners - Partner pairs from previous round
+ * @param {number} roundNumber - Round number to generate
+ * @returns {Array} Array of round objects (usually 1 round)
+ */
+export function generateNextRoundForRegularLeague(courtPlayers, previousPartners, roundNumber) {
+  if (!courtPlayers || courtPlayers.length < 4) {
+    return [];
+  }
+
+  // Generate all possible pairings
+  const allPairings = generateAllPairings(courtPlayers);
+  
+  if (allPairings.length < 2) {
+    // Not enough players to form a match
+    return [];
+  }
+  
+  // Filter out pairings that were partners in previous round
+  const availablePairings = previousPartners.length > 0
+    ? allPairings.filter(pair => !werePartners(previousPartners, pair[0], pair[1]))
+    : allPairings;
+  
+  // If we don't have enough pairings after filtering, use all pairings
+  // (this allows some repetition if necessary)
+  const pairingsToUse = availablePairings.length >= 2 ? availablePairings : allPairings;
+  
+  // Try to find two non-overlapping pairs
+  for (let i = 0; i < pairingsToUse.length; i++) {
+    for (let j = i + 1; j < pairingsToUse.length; j++) {
+      if (!pairsSharePlayer(pairingsToUse[i], pairingsToUse[j])) {
+        const playingIds = [...pairingsToUse[i], ...pairingsToUse[j]];
+        const sittingOut = courtPlayers.filter(p => !playingIds.includes(p));
+        
+        return [{
+          roundNumber,
+          teamA: pairingsToUse[i],
+          teamB: pairingsToUse[j],
+          sittingOut: sittingOut.length === 1 ? sittingOut[0] : (sittingOut.length > 0 ? sittingOut : null)
+        }];
+      }
+    }
+  }
+  
+  // Fallback: use first two pairings even if they share a player (shouldn't happen with 4+ players)
+  if (pairingsToUse.length >= 2) {
+    const playingIds = [...pairingsToUse[0], ...pairingsToUse[1]];
+    const sittingOut = courtPlayers.filter(p => !playingIds.includes(p));
+    
+    return [{
+      roundNumber,
+      teamA: pairingsToUse[0],
+      teamB: pairingsToUse[1],
+      sittingOut: sittingOut.length === 1 ? sittingOut[0] : (sittingOut.length > 0 ? sittingOut : null)
+    }];
+  }
+  
+  // Last resort: use regular round-robin
+  const fallbackSchedule = generateRoundRobinSchedule(courtPlayers);
+  if (fallbackSchedule.length > 0) {
+    const round = fallbackSchedule[0];
+    return [{
+      roundNumber,
+      teamA: round.teamA,
+      teamB: round.teamB,
+      sittingOut: round.sittingOut
+    }];
+  }
+  
+  return [];
 }
 
 /**

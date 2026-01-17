@@ -190,14 +190,14 @@ export default function LeagueCourts({
         const Icon = config.Icon;
 
         // Group matches by round
-        // For mixed doubles, only show current active round
-        const isMixedDoubles = league?.leagueMode === 'mixed_doubles';
+        // For mixed doubles and regular league, only show current active round
+        const isRoundByRound = league?.leagueMode === 'mixed_doubles' || league?.leagueMode === 'regular';
         const currentActiveRound = currentEventDay?.currentActiveRound || 1;
         
         const matchesByRound = {};
         courtMatches.forEach(match => {
-          // Filter: only show current active round for mixed doubles
-          if (isMixedDoubles && match.roundNumber !== currentActiveRound) {
+          // Filter: only show current active round for round-by-round modes
+          if (isRoundByRound && match.roundNumber !== currentActiveRound) {
             return;
           }
           
@@ -223,6 +223,15 @@ export default function LeagueCourts({
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                {(league?.leagueMode === 'regular' || league?.leagueMode === 'mixed_doubles') && (
+                  <span style={{ 
+                    fontSize: '12px', 
+                    color: 'var(--text-secondary)',
+                    fontWeight: '500'
+                  }}>
+                    Round {currentActiveRound}
+                  </span>
+                )}
                 <span className="match-count">
                   {completedMatches}/{courtMatches.length} matches
                 </span>

@@ -398,6 +398,28 @@ export function assignCourtsByPoints(checkedInPlayerIds, allPlayers) {
 }
 
 /**
+ * Assign courts randomly (for regular ladder league)
+ * @param {Array} checkedInPlayerIds - IDs of players who checked in
+ * @returns {Array} Court assignments
+ */
+export function assignCourtsByRandom(checkedInPlayerIds) {
+  // Shuffle players randomly using Fisher-Yates algorithm
+  const shuffled = [...checkedInPlayerIds];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  // Distribute evenly across 4 courts
+  const courts = [[], [], [], []];
+  shuffled.forEach((playerId, index) => {
+    courts[index % 4].push(playerId);
+  });
+  
+  return courts;
+}
+
+/**
  * Assign courts considering both points and previous day movement
  */
 function assignCourtsByPointsWithMovement(movements, checkedInPlayerIds, allPlayers) {

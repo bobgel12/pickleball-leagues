@@ -17,7 +17,9 @@ export default function LeagueCheckIn({
   const maxPlayers = league.maxPlayersPerDay;
   const checkedInCount = checkedInPlayersDetails.length;
   const canCheckIn = checkedInCount < maxPlayers;
-  const canCloseCheckIn = checkedInCount >= 4;
+  const isRegularLeague = league.leagueMode === 'regular';
+  const isMultipleOf4 = checkedInCount % 4 === 0;
+  const canCloseCheckIn = checkedInCount >= 4 && (!isRegularLeague || isMultipleOf4);
 
   const handleCheckIn = (playerId) => {
     if (!canCheckIn) {
@@ -40,8 +42,13 @@ export default function LeagueCheckIn({
   };
 
   const handleCloseCheckIn = () => {
-    if (!canCloseCheckIn) {
+    if (checkedInCount < 4) {
       if (toast) toast.warning('Need at least 4 players to start');
+      return;
+    }
+    
+    if (isRegularLeague && !isMultipleOf4) {
+      if (toast) toast.error(`Regular ladder league requires a multiple of 4 players. Currently: ${checkedInCount} players`);
       return;
     }
     
@@ -54,6 +61,9 @@ export default function LeagueCheckIn({
       const success = onCloseCheckIn();
       if (success && toast) {
         toast.success('Check-in closed. Courts assigned!');
+      } else if (!success && isRegularLeague && !isMultipleOf4) {
+        // This shouldn't happen since we check above, but just in case
+        if (toast) toast.error(`Regular ladder league requires a multiple of 4 players. Currently: ${checkedInCount} players`);
       }
     }
   };
@@ -155,7 +165,11 @@ export default function LeagueCheckIn({
           </button>
           {!canCloseCheckIn && (
             <p style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center', marginTop: '8px' }}>
-              Need at least 4 players to close check-in
+              {checkedInCount < 4 
+                ? 'Need at least 4 players to close check-in'
+                : isRegularLeague && !isMultipleOf4
+                  ? `Regular ladder league requires a multiple of 4 players (currently: ${checkedInCount})`
+                  : 'Cannot close check-in'}
             </p>
           )}
         </div>
