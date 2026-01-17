@@ -28,6 +28,8 @@ export default function ClubSelector() {
       if (response.ok) {
         const { club } = await response.json();
         setClubSlug(club.slug);
+        // Automatically refresh the page to load league data
+        window.location.reload();
       } else if (response.status === 404) {
         setErrorMessage('Club not found. Would you like to register a new club?');
       } else {
@@ -47,6 +49,8 @@ export default function ClubSelector() {
     setShowRegistration(false);
     setInputSlug('');
     setErrorMessage('');
+    // Automatically refresh the page to load league data
+    window.location.reload();
   };
 
   if (showRegistration) {

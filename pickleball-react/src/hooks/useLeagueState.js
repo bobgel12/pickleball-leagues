@@ -783,11 +783,14 @@ export function useLeagueState() {
     const changeCheck = canChangePartners(league);
     if (!changeCheck.canChange) {
       console.warn('Cannot change partners:', changeCheck.reason);
-      return false;
+      return { success: false, message: changeCheck.reason };
     }
 
-    setLeague(prev => autoAssignPartners(prev));
-    return true;
+    const result = autoAssignPartners(league);
+    if (result.success) {
+      setLeague(result.league);
+    }
+    return { success: result.success, message: result.message };
   }, [league]);
 
   // Check if partners can be changed

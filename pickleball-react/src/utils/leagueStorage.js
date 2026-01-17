@@ -711,9 +711,19 @@ export function validatePartnership(league, playerId1, playerId2) {
  * @param {Object} league - League object
  * @returns {Object} Updated league object with partners assigned
  */
+/**
+ * Auto-assign partners based on ladder position
+ * Pairs top man with top woman, second man with second woman, etc.
+ * @param {Object} league - League object
+ * @returns {Object} { success: boolean, league: Object, message?: string }
+ */
 export function autoAssignPartners(league) {
   if (league.leagueMode !== LEAGUE_MODE.MIXED_DOUBLES) {
-    return league; // No auto-assignment for regular leagues
+    return { 
+      success: false, 
+      league, 
+      message: 'Auto-assignment is only available for Mixed Doubles leagues' 
+    };
   }
   
   // Get standings sorted by cumulative points (or DUPR for new players)
@@ -724,7 +734,14 @@ export function autoAssignPartners(league) {
   const women = standings.filter(p => p.gender === 'female');
   
   if (men.length === 0 || women.length === 0) {
-    return league; // Can't assign partners without both genders
+    const message = men.length === 0 
+      ? 'Cannot assign partners: No male players found. Please ensure players have gender assigned.'
+      : 'Cannot assign partners: No female players found. Please ensure players have gender assigned.';
+    return { 
+      success: false, 
+      league, 
+      message 
+    };
   }
   
   // Pair by position: top man with top woman, etc.
@@ -738,9 +755,15 @@ export function autoAssignPartners(league) {
     newPartners[womanId] = manId;
   }
   
-  return {
+  const updatedLeague = {
     ...league,
     partners: newPartners
+  };
+  
+  return { 
+    success: true, 
+    league: updatedLeague, 
+    message: `Successfully assigned ${minPairs} partner pair${minPairs !== 1 ? 's' : ''}` 
   };
 }
 

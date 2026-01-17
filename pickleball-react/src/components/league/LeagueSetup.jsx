@@ -653,10 +653,13 @@ export default function LeagueSetup({
               <button
                 className="btn primary"
                 onClick={() => {
-                  if (onAutoAssignPartners && onAutoAssignPartners()) {
-                    if (toast) toast.success('Partners auto-assigned based on ladder position');
-                  } else {
-                    if (toast) toast.error('Failed to auto-assign partners');
+                  if (onAutoAssignPartners) {
+                    const result = onAutoAssignPartners();
+                    if (result && result.success) {
+                      if (toast) toast.success(result.message || 'Partners auto-assigned based on ladder position');
+                    } else {
+                      if (toast) toast.error(result?.message || 'Failed to auto-assign partners');
+                    }
                   }
                 }}
                 disabled={!canModifyPartners || !canModifyPartners.canChange}
