@@ -14,7 +14,8 @@ import {
   assignCourtsByDupr,
   assignCourtsByPoints,
   assignCourtsByRandom,
-  calculatePlayerDayPerformance
+  calculatePlayerDayPerformance,
+  consolidateCourtsToHighest
 } from '../utils/ladderMovement.js';
 import {
   applyMovementForMoneyRound,
@@ -236,6 +237,12 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
           court.sort((a, b) => a - b);
         });
 
+        // Consolidate to highest courts if less than 16 players
+        const totalPlayers = newCourtAssignments.flat().length;
+        if (totalPlayers < 16) {
+          newCourtAssignments = consolidateCourtsToHighest(newCourtAssignments);
+        }
+
         // Ensure partners are split (not on same court) after movement
         const partners = league.partners || {};
         const partnerConflicts = [];
@@ -380,6 +387,12 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     newCourtAssignments.forEach(court => {
       court.sort((a, b) => a - b);
     });
+
+    // Consolidate to highest courts if less than 16 players
+    const totalPlayers = newCourtAssignments.flat().length;
+    if (totalPlayers < 16) {
+      newCourtAssignments = consolidateCourtsToHighest(newCourtAssignments);
+    }
 
     // Generate next round with partner splitting
     const nextRoundNumber = currentActiveRound + 1;
