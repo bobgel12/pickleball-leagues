@@ -414,30 +414,17 @@ export function assignCourtsByRandom(checkedInPlayerIds) {
   // For doubles pickleball, we need exactly 4 players per court
   // Distribute players so each court (except possibly the last) has 4 players
   const playersPerCourt = 4;
-  const totalPlayers = shuffled.length;
   
   // Initialize all 4 courts (some may be empty)
   const courts = [[], [], [], []];
   
-  // If less than 16 players, use highest courts first (Court 4 = index 3, going down)
-  // Otherwise, distribute sequentially from Court 1 (index 0)
-  if (totalPlayers < 16) {
-    shuffled.forEach((playerId, index) => {
-      const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
-      if (courtIndex >= 0) {
-        courts[courtIndex].push(playerId);
-      }
-    });
-  } else {
-    // Original logic: distribute sequentially from Court 1
-    shuffled.forEach((playerId, index) => {
-      const courtIndex = Math.floor(index / playersPerCourt);
-      // Only assign to valid court indices (0-3)
-      if (courtIndex < 4) {
-        courts[courtIndex].push(playerId);
-      }
-    });
-  }
+  // Always use highest courts first (Court 4 = index 3, going down)
+  shuffled.forEach((playerId, index) => {
+    const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
+    if (courtIndex >= 0) {
+      courts[courtIndex].push(playerId);
+    }
+  });
   
   return courts;
 }
@@ -463,9 +450,13 @@ export function consolidateCourtsToHighest(courtAssignments) {
   const playersPerCourt = 4;
   
   allPlayers.forEach((playerId, index) => {
-    const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
-    if (courtIndex >= 0) {
-      consolidated[courtIndex].push(playerId);
+    // Ensure playerId is a number
+    const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
+    if (!isNaN(normalizedId)) {
+      const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
+      if (courtIndex >= 0) {
+        consolidated[courtIndex].push(normalizedId);
+      }
     }
   });
   

@@ -333,7 +333,17 @@ export function useLeagueState() {
 
   // Get player by ID
   const getPlayerById = useCallback((playerId) => {
-    return league.registeredPlayers.find(p => p.id === playerId);
+    // Normalize ID to number for consistent lookup
+    const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
+    if (isNaN(normalizedId)) {
+      console.warn('getPlayerById: Invalid ID provided:', playerId);
+      return null;
+    }
+    return league.registeredPlayers.find(p => {
+      // Normalize player ID for comparison
+      const playerIdNum = typeof p.id === 'string' ? parseInt(p.id, 10) : p.id;
+      return playerIdNum === normalizedId;
+    });
   }, [league.registeredPlayers]);
 
   // Start a new event day

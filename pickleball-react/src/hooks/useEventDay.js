@@ -394,6 +394,30 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       newCourtAssignments = consolidateCourtsToHighest(newCourtAssignments);
     }
 
+    // Update player stats for the completed round
+    currentCourtAssignments.forEach((courtPlayers, courtIndex) => {
+      courtPlayers.forEach(playerId => {
+        const performance = calculatePlayerDayPerformance(
+          playerId,
+          currentRoundMatches, // Only matches from this round
+          league.scoringSystem,
+          {
+            leagueMode: 'regular',
+            partners: {}
+          }
+        );
+
+        updatePlayerStats(playerId, {
+          points: performance.points,
+          wins: performance.wins,
+          losses: performance.losses,
+          pointsScored: performance.pointsScored,
+          pointsAllowed: performance.pointsAllowed,
+          courtHistory: [{ dayNumber: currentEventDay.dayNumber, court: courtIndex + 1 }]
+        });
+      });
+    });
+
     // Generate next round with partner splitting
     const nextRoundNumber = currentActiveRound + 1;
     const nextRoundMatches = [];
@@ -441,7 +465,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     });
 
     return true;
-  }, [currentEventDay, league, updateEventDay]);
+  }, [currentEventDay, league, updateEventDay, updatePlayerStats]);
 
   // Clear a match score
   const clearMatchScore = useCallback((matchId) => {
