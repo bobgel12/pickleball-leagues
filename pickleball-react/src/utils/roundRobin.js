@@ -384,6 +384,19 @@ function generateRound1WithPartners(courtPlayers, partners) {
 }
 
 /**
+ * Generate a single round with mixed teams (1 man + 1 woman) with partners split
+ * @param {Array} courtPlayers - Array of player IDs on the court
+ * @param {Object} partners - Partners object { [playerId]: partnerId }
+ * @param {Function} getPlayerGender - Function to get player gender by ID
+ * @param {number} roundNumber - The round number to generate
+ * @returns {Array} Array of round objects (usually 1 round for 4-5 players)
+ */
+export function generateSingleRound(courtPlayers, partners, getPlayerGender, roundNumber) {
+  const rounds = generateMixedRounds(courtPlayers, partners, getPlayerGender, roundNumber, roundNumber);
+  return rounds;
+}
+
+/**
  * Generate subsequent rounds with mixed teams (1 man + 1 woman)
  * Generates exactly 5 rounds (rounds 2-6) with partners split
  * All rounds must separate assigned partners and maintain mixed teams

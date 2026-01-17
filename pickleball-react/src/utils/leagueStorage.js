@@ -109,6 +109,8 @@ export function createEventDay(id, dayNumber) {
     // Phase tracking for two-phase event structure
     phase: EVENT_DAY_PHASE.CHECKIN,
     ladderMovement: [],
+    // Mixed doubles round tracking
+    currentActiveRound: 1, // Track which round is currently active (1-6)
     // Money Round fields
     moneyRoundEnabled: false,
     moneyRoundCourts: [[], [], [], []], // Court assignments after ladder movement

@@ -190,14 +190,14 @@ export default function LeagueCourts({
         const Icon = config.Icon;
 
         // Group matches by round
-        // For mixed doubles, only show Round 1 initially if round1Completed is false
+        // For mixed doubles, only show current active round
         const isMixedDoubles = league?.leagueMode === 'mixed_doubles';
-        const round1PhaseActive = isMixedDoubles && !currentEventDay?.round1Completed;
+        const currentActiveRound = currentEventDay?.currentActiveRound || 1;
         
         const matchesByRound = {};
         courtMatches.forEach(match => {
-          // Filter: only show Round 1 if in round1 phase
-          if (round1PhaseActive && match.roundNumber !== 1) {
+          // Filter: only show current active round for mixed doubles
+          if (isMixedDoubles && match.roundNumber !== currentActiveRound) {
             return;
           }
           
