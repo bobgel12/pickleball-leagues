@@ -222,8 +222,10 @@ export async function loadTournamentData() {
 
 /**
  * Save league data to API
+ * @param {Object} data - The league data object (should include leagueId or leagueName)
+ * @param {string} leagueId - Optional league ID if not in data object
  */
-export async function saveLeagueData(data) {
+export async function saveLeagueData(data, leagueId = null) {
   const clubSlug = getClubSlug();
   if (!clubSlug) {
     console.warn('No club selected, cannot save league data');
@@ -237,6 +239,10 @@ export async function saveLeagueData(data) {
     }
   }
 
+  // Extract leagueId from data if not provided
+  const targetLeagueId = leagueId || data?.leagueId || data?.league_id;
+  const leagueName = data?.leagueName || data?.league_name;
+
   // Check if offline
   if (!checkOnline()) {
     console.warn('Offline - saving to localStorage only');
@@ -244,7 +250,7 @@ export async function saveLeagueData(data) {
       localStorage.setItem('pickleball_league_state', JSON.stringify(data));
       // Store pending sync
       const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
-      pending.push({ type: 'league', clubSlug, data, timestamp: Date.now() });
+      pending.push({ type: 'league', clubSlug, leagueId: targetLeagueId, data, timestamp: Date.now() });
       localStorage.setItem('pickleball_pending_sync', JSON.stringify(pending));
       return { success: true, offline: true };
     } catch (e) {
@@ -259,7 +265,11 @@ export async function saveLeagueData(data) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ 
+        data,
+        leagueId: targetLeagueId,
+        leagueName: leagueName
+      }),
     });
 
     if (!response.ok) {
@@ -270,7 +280,7 @@ export async function saveLeagueData(data) {
     // Clear pending sync for this club
     try {
       const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
-      const filtered = pending.filter(p => !(p.type === 'league' && p.clubSlug === clubSlug));
+      const filtered = pending.filter(p => !(p.type === 'league' && p.clubSlug === clubSlug && p.leagueId === targetLeagueId));
       localStorage.setItem('pickleball_pending_sync', JSON.stringify(filtered));
     } catch (e) {
       // Ignore errors clearing pending sync
@@ -284,7 +294,7 @@ export async function saveLeagueData(data) {
       localStorage.setItem('pickleball_league_state', JSON.stringify(data));
       // Store pending sync
       const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
-      pending.push({ type: 'league', clubSlug, data, timestamp: Date.now() });
+      pending.push({ type: 'league', clubSlug, leagueId: targetLeagueId, data, timestamp: Date.now() });
       localStorage.setItem('pickleball_pending_sync', JSON.stringify(pending));
       return { success: true, offline: true, error: error.message };
     } catch (e) {
@@ -296,8 +306,9 @@ export async function saveLeagueData(data) {
 
 /**
  * Load league data from API
+ * @param {string} leagueId - Optional league ID to load specific league. If not provided, returns null (use loadAllLeagues for list)
  */
-export async function loadLeagueData() {
+export async function loadLeagueData(leagueId = null) {
   const clubSlug = getClubSlug();
   if (!clubSlug) {
     // Fallback to localStorage for backward compatibility
@@ -326,7 +337,11 @@ export async function loadLeagueData() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
+    const url = leagueId 
+      ? `${getApiBase()}/${clubSlug}/league?leagueId=${encodeURIComponent(leagueId)}`
+      : `${getApiBase()}/${clubSlug}/league`;
+    
+    const response = await fetch(url, {
       signal: controller.signal
     });
     
@@ -345,16 +360,21 @@ export async function loadLeagueData() {
       throw new Error(`Failed to load league data: ${response.statusText}`);
     }
 
-    const { data } = await response.json();
+    const result = await response.json();
     
-    // Also save to localStorage as cache
-    try {
-      localStorage.setItem('pickleball_league_state', JSON.stringify(data));
-    } catch (e) {
-      // Ignore localStorage errors
+    // Handle different response formats (single league vs list)
+    const league = result.league || result.data;
+    
+    if (league) {
+      // Also save to localStorage as cache
+      try {
+        localStorage.setItem('pickleball_league_state', JSON.stringify(league));
+      } catch (e) {
+        // Ignore localStorage errors
+      }
     }
 
-    return data;
+    return league || null;
   } catch (error) {
     if (error.name === 'AbortError') {
       console.warn('Request timeout - loading from localStorage');
@@ -369,6 +389,149 @@ export async function loadLeagueData() {
       console.error('Failed to load from localStorage:', e);
       return null;
     }
+  }
+}
+
+/**
+ * Load all leagues for the current club (metadata only)
+ * @returns {Array} Array of league metadata objects
+ */
+export async function loadAllLeagues(clubSlug = null) {
+  const targetSlug = clubSlug || getClubSlug();
+  if (!targetSlug) {
+    console.warn('No club selected, cannot load leagues');
+    return [];
+  }
+
+  // If offline, return empty array
+  if (!checkOnline()) {
+    console.warn('Offline - cannot load leagues list');
+    return [];
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${getApiBase()}/${targetSlug}/league`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return []; // No leagues exist yet
+      }
+      throw new Error(`Failed to load leagues: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.leagues || [];
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Request timeout loading leagues');
+    } else {
+      console.error('Error loading leagues:', error);
+    }
+    return [];
+  }
+}
+
+/**
+ * Create a new league
+ * @param {string} leagueName - Name of the league (must be unique within club)
+ * @param {string} description - Optional description
+ * @param {Object} initialData - Optional initial league data
+ * @returns {Object} Created league object
+ */
+export async function createLeague(leagueName, description = null, initialData = null) {
+  const clubSlug = getClubSlug();
+  if (!clubSlug) {
+    throw new Error('No club selected, cannot create league');
+  }
+
+  if (!leagueName || typeof leagueName !== 'string' || leagueName.trim() === '') {
+    throw new Error('League name is required');
+  }
+
+  // If offline, throw error
+  if (!checkOnline()) {
+    throw new Error('Cannot create league while offline');
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        leagueName: leagueName.trim(),
+        description: description || null,
+        data: initialData || {}
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to create league: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.league;
+  } catch (error) {
+    console.error('Error creating league:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a league
+ * @param {string} leagueId - ID of the league to delete
+ * @param {string} leagueName - Alternative: name of the league to delete
+ * @returns {boolean} True if successful
+ */
+export async function deleteLeague(leagueId = null, leagueName = null) {
+  const clubSlug = getClubSlug();
+  if (!clubSlug) {
+    throw new Error('No club selected, cannot delete league');
+  }
+
+  if (!leagueId && !leagueName) {
+    throw new Error('leagueId or leagueName is required');
+  }
+
+  // If offline, throw error
+  if (!checkOnline()) {
+    throw new Error('Cannot delete league while offline');
+  }
+
+  try {
+    const url = leagueId
+      ? `${getApiBase()}/${clubSlug}/league?leagueId=${encodeURIComponent(leagueId)}`
+      : `${getApiBase()}/${clubSlug}/league?leagueName=${encodeURIComponent(leagueName)}`;
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        leagueId: leagueId,
+        leagueName: leagueName
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to delete league: ${response.statusText}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting league:', error);
+    throw error;
   }
 }
 

@@ -28,7 +28,7 @@ import {
   createDefaultClub,
   normalizeClub
 } from '../utils/leagueStorage.js';
-import { loadLeagueData, saveLeagueData } from '../utils/apiStorage.js';
+import { loadLeagueData, saveLeagueData, loadAllLeagues, createLeague as createLeagueApi, deleteLeague as deleteLeagueApi } from '../utils/apiStorage.js';
 import {
   fetchClubById,
   fetchAllClubs,
@@ -44,6 +44,10 @@ export function useLeagueState() {
     // Start with default, will load from API if club is selected
     return createDefaultLeague();
   });
+
+  // Multiple leagues support
+  const [leagues, setLeagues] = useState([]); // Array of league metadata
+  const [currentLeagueId, setCurrentLeagueId] = useState(null); // Currently selected league ID
 
   const [isLoading, setIsLoading] = useState(true);
   const saveTimeoutRef = useRef(null);
@@ -126,39 +130,44 @@ export function useLeagueState() {
     };
   }, [clubSlug]);
 
-  // Load from API on mount and when club slug changes
+  // Load all leagues and current league from API on mount and when club slug changes
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const loaded = await loadLeagueData();
-        if (loaded) {
-          const normalized = normalizeLeagueState(loaded);
-          setLeague(normalized);
-          
-          // Update counters
-          if (normalized.registeredPlayers.length > 0) {
-            const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
-            setPlayerIdCounter(maxPlayerId + 1);
+        // First, load all leagues metadata for the club
+        const allLeagues = await loadAllLeagues();
+        setLeagues(allLeagues || []);
+
+        // Only load a specific league if we have a currentLeagueId set
+        // Otherwise, show leagues dashboard first (user selects league)
+        if (currentLeagueId && allLeagues && allLeagues.some(l => l.leagueId === currentLeagueId)) {
+          const loaded = await loadLeagueData(currentLeagueId);
+          if (loaded) {
+            const normalized = normalizeLeagueState(loaded);
+            setLeague(normalized);
+            
+            // Update counters
+            if (normalized.registeredPlayers.length > 0) {
+              const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
+              setPlayerIdCounter(maxPlayerId + 1);
+            }
+            if (normalized.eventDays.length > 0) {
+              const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
+              setEventDayIdCounter(maxDayId + 1);
+            }
           }
-          if (normalized.eventDays.length > 0) {
-            const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
-            setEventDayIdCounter(maxDayId + 1);
-          }
+        } else if (allLeagues && allLeagues.length === 0) {
+          // No leagues exist yet, use default (but don't set currentLeagueId)
+          const defaultLeague = createDefaultLeague();
+          setLeague(defaultLeague);
+          setCurrentLeagueId(null);
         } else {
-          // Fallback to localStorage
-          const localData = loadLeague();
-          if (localData) {
-            setLeague(localData);
-            if (localData.registeredPlayers.length > 0) {
-              const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
-              setPlayerIdCounter(maxId + 1);
-            }
-            if (localData.eventDays.length > 0) {
-              const maxId = Math.max(...localData.eventDays.map(d => d.id));
-              setEventDayIdCounter(maxId + 1);
-            }
-          }
+          // Leagues exist but no currentLeagueId - keep league state but don't load specific league
+          // User will select from dashboard
+          // Use default league state for now
+          const defaultLeague = createDefaultLeague();
+          setLeague(defaultLeague);
         }
       } catch (error) {
         console.error('Error loading league data:', error);
@@ -180,8 +189,13 @@ export function useLeagueState() {
       }
     };
 
-    loadData();
-  }, [clubSlug]);
+    if (clubSlug) {
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubSlug]); // Only reload when club slug changes, not when currentLeagueId changes
 
   // Auto-save on league changes (debounced)
   useEffect(() => {
@@ -198,7 +212,7 @@ export function useLeagueState() {
     // Debounce API save to avoid too many requests
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        await saveLeagueData(league);
+        await saveLeagueData(league, league.leagueId || currentLeagueId);
       } catch (error) {
         console.error('Error saving league data to API:', error);
         // localStorage already saved as fallback
@@ -965,6 +979,201 @@ export function useLeagueState() {
     return true;
   }, []);
 
+  // ==========================================
+  // MULTIPLE LEAGUES MANAGEMENT
+  // ==========================================
+
+  // Load all leagues for current club
+  const loadAllLeaguesForClub = useCallback(async () => {
+    try {
+      const allLeagues = await loadAllLeagues(); // Uses clubSlug from getClubSlug internally
+      setLeagues(allLeagues || []);
+      return allLeagues || [];
+    } catch (error) {
+      console.error('Error loading all leagues:', error);
+      setLeagues([]);
+      return [];
+    }
+  }, []);
+
+  // Switch to a different league
+  const switchLeague = useCallback(async (leagueId) => {
+    if (!leagueId) {
+      console.warn('Cannot switch to league: leagueId is required');
+      return false;
+    }
+
+    setIsLoading(true);
+    try {
+      const loaded = await loadLeagueData(leagueId);
+      if (loaded) {
+        const normalized = normalizeLeagueState(loaded);
+        setLeague(normalized);
+        setCurrentLeagueId(leagueId);
+        
+        // Update counters
+        if (normalized.registeredPlayers.length > 0) {
+          const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
+          setPlayerIdCounter(maxPlayerId + 1);
+        }
+        if (normalized.eventDays.length > 0) {
+          const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
+          setEventDayIdCounter(maxDayId + 1);
+        }
+
+        // Refresh leagues list
+        await loadAllLeaguesForClub();
+        
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error switching league:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadAllLeaguesForClub]);
+
+  // Create a new league
+  const createNewLeague = useCallback(async (leagueName, description = null) => {
+    if (!leagueName || typeof leagueName !== 'string' || leagueName.trim() === '') {
+      throw new Error('League name is required');
+    }
+
+    try {
+      // Create default league data
+      const defaultLeagueData = createDefaultLeague({
+        clubId: club?.id || league.clubId,
+        leagueName: leagueName.trim(),
+        description: description || null
+      });
+
+      // Create league in database
+      const newLeague = await createLeagueApi(leagueName.trim(), description, defaultLeagueData);
+      
+      // Update local state
+      const normalized = normalizeLeagueState({
+        ...defaultLeagueData,
+        leagueId: newLeague.leagueId || newLeague.league_id,
+        leagueName: newLeague.leagueName || newLeague.league_name
+      });
+      
+      setLeague(normalized);
+      setCurrentLeagueId(newLeague.leagueId || newLeague.league_id);
+      
+      // Refresh leagues list
+      const allLeagues = await loadAllLeaguesForClub();
+      
+      return {
+        success: true,
+        league: newLeague
+      };
+    } catch (error) {
+      console.error('Error creating league:', error);
+      throw error;
+    }
+  }, [club, league.clubId, loadAllLeaguesForClub]);
+
+  // Delete a league
+  const deleteLeague = useCallback(async (leagueId) => {
+    if (!leagueId) {
+      throw new Error('leagueId is required');
+    }
+
+    try {
+      await deleteLeagueApi(leagueId);
+      
+      // Refresh leagues list
+      const allLeagues = await loadAllLeaguesForClub();
+      
+      // If we deleted the current league, switch to first available or reset
+      if (currentLeagueId === leagueId) {
+        if (allLeagues && allLeagues.length > 0) {
+          await switchLeague(allLeagues[0].leagueId);
+        } else {
+          // No leagues left, reset to default
+          const defaultLeague = createDefaultLeague({
+            clubId: club?.id || league.clubId
+          });
+          setLeague(defaultLeague);
+          setCurrentLeagueId(null);
+        }
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting league:', error);
+      throw error;
+    }
+  }, [currentLeagueId, club, league.clubId, loadAllLeaguesForClub, switchLeague]);
+
+  // Update league name
+  const updateLeagueName = useCallback(async (leagueId, newName, description = null) => {
+    if (!leagueId) {
+      throw new Error('leagueId is required');
+    }
+    if (!newName || typeof newName !== 'string' || newName.trim() === '') {
+      throw new Error('League name is required');
+    }
+
+    try {
+      // Update league name via API
+      const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leagueId,
+          leagueName: newName.trim(),
+          description: description !== undefined ? description : null
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to update league name: ${response.statusText}`);
+      }
+
+      // Update local state
+      setLeague(prev => ({
+        ...prev,
+        leagueName: newName.trim(),
+        description: description !== undefined ? description : prev.description
+      }));
+
+      // Refresh leagues list
+      await loadAllLeaguesForClub();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating league name:', error);
+      throw error;
+    }
+  }, [clubSlug, loadAllLeaguesForClub]);
+
+  // Helper function to get API base URL
+  const getApiBase = useCallback(() => {
+    // Use the same logic as apiStorage
+    if (typeof window !== 'undefined') {
+      const stagingApiUrl = import.meta.env.VITE_STAGING_API_URL;
+      if (stagingApiUrl) {
+        return stagingApiUrl.endsWith('/api/clubs') 
+          ? stagingApiUrl 
+          : `${stagingApiUrl.replace(/\/$/, '')}/api/clubs`;
+      }
+      const prodApiUrl = import.meta.env.VITE_API_BASE_URL;
+      if (prodApiUrl) {
+        return prodApiUrl.endsWith('/api/clubs') 
+          ? prodApiUrl 
+          : `${prodApiUrl.replace(/\/$/, '')}/api/clubs`;
+      }
+      return `${window.location.origin}/api/clubs`;
+    }
+    return '/api/clubs';
+  }, []);
+
   return {
     league,
     currentEventDay,
@@ -972,6 +1181,15 @@ export function useLeagueState() {
     pointsLeader,
     winPercentageLeader,
     canRegisterPlayers,
+
+    // Multiple leagues support
+    leagues,
+    currentLeagueId,
+    loadAllLeagues: loadAllLeaguesForClub,
+    switchLeague,
+    createNewLeague,
+    deleteLeague,
+    updateLeagueName,
 
     // League actions
     createLeague,

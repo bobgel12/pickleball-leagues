@@ -40,6 +40,9 @@ import ToastContainer from './components/ToastContainer';
 // League Components
 import {
   LeagueDashboard,
+  LeaguesDashboard,
+  LeagueSelector,
+  LeagueManagementModal,
   LeagueSetup,
   EventDayManager,
   LeagueStandings,
@@ -91,8 +94,11 @@ function App() {
   );
 
   // League navigation
-  const [leagueView, setLeagueView] = useState('dashboard');
+  const [leagueView, setLeagueView] = useState('leagues'); // Start with leagues dashboard
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [showLeagueModal, setShowLeagueModal] = useState(false);
+  const [leagueModalMode, setLeagueModalMode] = useState('create'); // 'create' or 'edit'
+  const [editingLeague, setEditingLeague] = useState(null);
 
   // Redirect from admin-only views when not in admin mode
   useEffect(() => {
@@ -625,6 +631,78 @@ function App() {
     }
   }, [leagueState, toast]);
 
+  // Multiple leagues handlers
+  const handleSwitchLeague = useCallback(async (leagueId) => {
+    try {
+      const success = await leagueState.switchLeague(leagueId);
+      if (success) {
+        setLeagueView('dashboard'); // Switch to dashboard view after selecting league
+        toast.success('Switched league');
+      }
+    } catch (error) {
+      console.error('Error switching league:', error);
+      toast.error('Failed to switch league');
+    }
+  }, [leagueState, toast]);
+
+  const handleCreateLeague = useCallback(async (leagueName, description) => {
+    try {
+      await leagueState.createNewLeague(leagueName, description);
+      setLeagueView('dashboard'); // Switch to dashboard view after creating
+    } catch (error) {
+      console.error('Error creating league:', error);
+      throw error; // Let modal handle error display
+    }
+  }, [leagueState]);
+
+  const handleDeleteLeague = useCallback(async (leagueId) => {
+    try {
+      await leagueState.deleteLeague(leagueId);
+      // If no leagues left, show leagues dashboard
+      if (leagueState.leagues.length === 0) {
+        setLeagueView('leagues');
+      }
+    } catch (error) {
+      console.error('Error deleting league:', error);
+      throw error; // Let modal handle error display
+    }
+  }, [leagueState]);
+
+  const handleEditLeague = useCallback(async (leagueId, newName, description) => {
+    try {
+      await leagueState.updateLeagueName(leagueId, newName, description);
+    } catch (error) {
+      console.error('Error updating league:', error);
+      throw error; // Let modal handle error display
+    }
+  }, [leagueState]);
+
+  const handleSelectLeagueForEdit = useCallback((league) => {
+    setEditingLeague(league);
+    setLeagueModalMode('edit');
+    setShowLeagueModal(true);
+  }, []);
+
+  const handleShowCreateModal = useCallback(() => {
+    setEditingLeague(null);
+    setLeagueModalMode('create');
+    setShowLeagueModal(true);
+  }, []);
+
+  const handleCloseLeagueModal = useCallback(() => {
+    setShowLeagueModal(false);
+    setEditingLeague(null);
+  }, []);
+
+  const handleSaveLeagueModal = useCallback(async (leagueName, description) => {
+    if (leagueModalMode === 'create') {
+      await handleCreateLeague(leagueName, description);
+    } else if (leagueModalMode === 'edit' && editingLeague) {
+      await handleEditLeague(editingLeague.leagueId, leagueName, description);
+    }
+    handleCloseLeagueModal();
+  }, [leagueModalMode, editingLeague, handleCreateLeague, handleEditLeague, handleCloseLeagueModal]);
+
   const showLeaderboard = appState.currentTournament?.matchLimit &&
     appState.currentTournament.matchesPlayed >= appState.currentTournament.matchLimit;
 
@@ -634,7 +712,7 @@ function App() {
   }
 
   // Show loading state while club data is being fetched
-  if (clubLoading || !appState.currentTournament) {
+  if (clubLoading) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -644,6 +722,21 @@ function App() {
         color: 'var(--text-primary)'
       }}>
         Loading club data...
+      </div>
+    );
+  }
+
+  // For tournaments section, still check for tournament
+  if (activeSection === 'tournaments' && (!appState.currentTournament || leagueState.isLoading)) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: '100vh',
+        color: 'var(--text-primary)'
+      }}>
+        Loading tournament data...
       </div>
     );
   }
@@ -665,6 +758,20 @@ function App() {
   // Render League Section
   const renderLeagueSection = () => {
     switch (leagueView) {
+      case 'leagues':
+        return (
+          <LeaguesDashboard
+            leagues={leagueState.leagues || []}
+            currentLeagueId={leagueState.currentLeagueId}
+            isLoading={leagueState.isLoading}
+            onLoadLeagues={leagueState.loadAllLeagues}
+            onSelectLeague={handleSwitchLeague}
+            onCreateLeague={handleCreateLeague}
+            onDeleteLeague={handleDeleteLeague}
+            onEditLeague={handleSelectLeagueForEdit}
+            toast={toast}
+          />
+        );
       case 'setup':
         if (!adminAuth.isAdmin) return null;
         return (
@@ -775,6 +882,12 @@ function App() {
         isAdmin={adminAuth.isAdmin}
         onEnterAdminMode={handleEnterAdminMode}
         onExitAdminMode={handleExitAdminMode}
+        leagues={leagueState.leagues || []}
+        currentLeagueId={leagueState.currentLeagueId}
+        currentLeague={leagueState.league}
+        onSelectLeague={handleSwitchLeague}
+        onCreateLeague={handleShowCreateModal}
+        onEditLeague={handleSelectLeagueForEdit}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <ConfirmDialog

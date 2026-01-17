@@ -1,5 +1,8 @@
 // League Components
 export { default as LeagueDashboard } from './LeagueDashboard.jsx';
+export { default as LeaguesDashboard } from './LeaguesDashboard.jsx';
+export { default as LeagueSelector } from './LeagueSelector.jsx';
+export { default as LeagueManagementModal } from './LeagueManagementModal.jsx';
 export { default as LeagueSetup } from './LeagueSetup.jsx';
 export { default as LeagueCheckIn } from './LeagueCheckIn.jsx';
 export { default as LeagueCourts } from './LeagueCourts.jsx';

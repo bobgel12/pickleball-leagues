@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut, Lock, Shield } from 'lucide-react';
 import { useClub } from '../hooks/useClub';
+import LeagueSelector from './league/LeagueSelector';
 
 export default function Header({ 
   tournaments, 
@@ -14,7 +15,14 @@ export default function Header({
   onSectionChange,
   isAdmin = false,
   onEnterAdminMode,
-  onExitAdminMode
+  onExitAdminMode,
+  // Multiple leagues support
+  leagues = [],
+  currentLeagueId = null,
+  currentLeague = null,
+  onSelectLeague,
+  onCreateLeague,
+  onEditLeague
 }) {
   const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
@@ -163,6 +171,16 @@ export default function Header({
       {/* League Controls (only show when in league section) */}
       {activeSection === 'league' && (
         <div className="tournament-controls">
+          {leagues.length > 0 && (
+            <LeagueSelector
+              leagues={leagues}
+              currentLeagueId={currentLeagueId}
+              currentLeague={currentLeague}
+              onSelectLeague={onSelectLeague}
+              onCreateLeague={onCreateLeague}
+              onEditLeague={onEditLeague}
+            />
+          )}
           <button className="btn" onClick={onToggleTheme} type="button" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
             {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
           </button>
