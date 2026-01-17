@@ -90,7 +90,11 @@ export default function Header({
             )}
             <button
               className="btn"
-              onClick={clearClub}
+              onClick={() => {
+                clearClub();
+                // Reload page to navigate back to club selector
+                window.location.reload();
+              }}
               type="button"
               title="Switch Club"
               style={{ padding: '6px 12px', fontSize: '0.875rem' }}

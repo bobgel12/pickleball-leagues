@@ -388,7 +388,7 @@ function generateRound1WithPartners(courtPlayers, partners) {
  * Generates exactly 5 rounds (rounds 2-6) with partners split
  * All rounds must separate assigned partners and maintain mixed teams
  */
-function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRoundNumber, maxRoundNumber = 6) {
+export function generateMixedRounds(courtPlayers, partners, getPlayerGender, startRoundNumber, maxRoundNumber = 6) {
   const rounds = [];
   const men = [];
   const women = [];
