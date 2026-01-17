@@ -4,10 +4,6 @@
   "outputDirectory": ".",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
-    },
-    {
       "source": "/assets/:path*",
       "destination": "/pickleball-react/dist/assets/:path*"
     },
@@ -20,11 +16,7 @@
       "destination": "/simple/index.html"
     },
     {
-      "source": "/",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api|assets|simple).*)",
       "destination": "/index.html"
     }
   ],
