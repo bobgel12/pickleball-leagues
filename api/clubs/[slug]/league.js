@@ -58,6 +58,7 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
       }
       
       processedCount++;
+      console.log(`syncPlayersToDatabase: Processing player ${processedCount}/${registeredPlayers.length}: ${playerData.name} (id: ${playerData.id})`);
 
       let playerId = null;
 
@@ -70,8 +71,11 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
           .eq('club_id', clubId)
           .maybeSingle();
 
-        if (existingPlayer && !uuidError) {
+        if (uuidError) {
+          console.warn(`syncPlayersToDatabase: Error looking up player by UUID ${playerData.id}:`, uuidError);
+        } else if (existingPlayer) {
           playerId = existingPlayer.id;
+          console.log(`syncPlayersToDatabase: Found existing player by UUID: ${playerId}`);
         }
       }
 
@@ -84,8 +88,11 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
           .eq('name', playerData.name.trim())
           .maybeSingle();
 
-        if (existingPlayer && !nameError) {
+        if (nameError) {
+          console.warn(`syncPlayersToDatabase: Error looking up player by name "${playerData.name}":`, nameError);
+        } else if (existingPlayer) {
           playerId = existingPlayer.id;
+          console.log(`syncPlayersToDatabase: Found existing player by name: ${playerId}`);
         }
       }
 
@@ -300,37 +307,81 @@ export default async function handler(req, res) {
           .from('league_players')
           .select(`
             registered_at,
+            player_id,
             player:player_id (
               id,
               name,
               dupr_rating,
               gender,
               created_at
-            ),
-            stats:player_stats!player_stats_league_id_player_id_fkey (
-              cumulative_points,
-              total_wins,
-              total_losses,
-              points_scored,
-              points_allowed,
-              event_days_attended,
-              court_history,
-              ladder_position_history,
-              money_round_stats
             )
           `)
           .eq('league_id', leagueRecord.id);
 
+        if (playersError) {
+          console.error('Error loading league players:', playersError);
+        }
+
+        // Load player stats separately (more reliable than foreign key relationship)
+        const playerIds = (leaguePlayers || []).map(lp => lp.player_id).filter(Boolean);
+        let playerStatsMap = new Map();
+        
+        if (playerIds.length > 0) {
+          const { data: allStats, error: statsError } = await supabase
+            .from('player_stats')
+            .select('*')
+            .eq('league_id', leagueRecord.id)
+            .in('player_id', playerIds);
+
+          if (statsError) {
+            console.error('Error loading player stats:', statsError);
+          } else {
+            (allStats || []).forEach(stat => {
+              playerStatsMap.set(stat.player_id, stat);
+            });
+          }
+        }
+
+        // If player relationship didn't work, load players directly
+        let playersMap = new Map();
+        if (playerIds.length > 0) {
+          const missingPlayerIds = playerIds.filter(id => {
+            const lp = leaguePlayers?.find(l => l.player_id === id);
+            return !lp?.player;
+          });
+          
+          if (missingPlayerIds.length > 0) {
+            const { data: directPlayers, error: directError } = await supabase
+              .from('players')
+              .select('id, name, dupr_rating, gender, created_at')
+              .in('id', missingPlayerIds);
+            
+            if (directError) {
+              console.error('Error loading players directly:', directError);
+            } else {
+              (directPlayers || []).forEach(p => {
+                playersMap.set(p.id, p);
+              });
+            }
+          }
+        }
+
         // Build registeredPlayers array from normalized data
         const registeredPlayers = (leaguePlayers || []).map(lp => {
-          const player = lp.player;
-          const stats = lp.stats && lp.stats.length > 0 ? lp.stats[0] : null;
+          // Try relationship first, then fallback to direct load
+          const player = lp.player || playersMap.get(lp.player_id);
+          const stats = playerStatsMap.get(lp.player_id) || null;
+          
+          if (!player) {
+            console.warn(`Player ${lp.player_id} not found in database`);
+            return null; // Skip players that don't exist
+          }
           
           return {
-            id: player?.id || null,
-            name: player?.name || '',
-            duprRating: player?.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
-            gender: player?.gender || null,
+            id: player.id || null,
+            name: player.name || '',
+            duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+            gender: player.gender || null,
             registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
             cumulativePoints: stats?.cumulative_points || 0,
             totalWins: stats?.total_wins || 0,
@@ -348,14 +399,24 @@ export default async function handler(req, res) {
               contributionHistory: []
             }
           };
-        });
+        }).filter(Boolean); // Remove null entries
 
         // Merge players into league data (for backward compatibility)
         const leagueData = leagueRecord.data || {};
+        
+        // If no players loaded from normalized tables, try to use players from JSONB column as fallback
+        let finalRegisteredPlayers = registeredPlayers;
+        if (registeredPlayers.length === 0 && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length > 0) {
+          console.warn(`No players found in normalized tables for league ${leagueRecord.league_id}, using fallback from JSONB column`);
+          finalRegisteredPlayers = leagueData.registeredPlayers;
+        }
+        
         const mergedLeagueData = {
           ...leagueData,
-          registeredPlayers: registeredPlayers
+          registeredPlayers: finalRegisteredPlayers
         };
+        
+        console.log(`GET: Loaded ${finalRegisteredPlayers.length} players for league ${leagueRecord.league_id} (${registeredPlayers.length} from normalized tables, ${leagueData.registeredPlayers?.length || 0} from JSONB)`);
 
         return res.status(200).json({ 
           league: {
@@ -473,12 +534,19 @@ export default async function handler(req, res) {
 
       // Sync players to normalized tables if registeredPlayers exists in leagueData
       if (leagueData && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
+        console.log(`POST: Syncing ${leagueData.registeredPlayers.length} players for new league ${data.league_id}`);
         try {
           await syncPlayersToDatabase(supabase, data.id, data.league_id, clubId, leagueData.registeredPlayers);
         } catch (syncError) {
           console.error('Error syncing players during league creation:', syncError);
           // Don't fail league creation if player sync fails, but log the error
         }
+      } else {
+        console.log('POST: No registeredPlayers found in leagueData', {
+          hasLeagueData: !!leagueData,
+          registeredPlayersType: leagueData?.registeredPlayers ? typeof leagueData.registeredPlayers : 'undefined',
+          isArray: Array.isArray(leagueData?.registeredPlayers)
+        });
       }
 
       return res.status(201).json({ 
@@ -567,12 +635,19 @@ export default async function handler(req, res) {
         
         // Sync players to normalized tables if registeredPlayers exists in leagueData
         if (leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
+          console.log(`PUT: Syncing ${leagueData.registeredPlayers.length} players for league ${existingLeague.league_id}`);
           try {
             await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
           } catch (syncError) {
             console.error('Error syncing players during league update:', syncError);
             // Don't fail league update if player sync fails, but log the error
           }
+        } else {
+          console.log('PUT: No registeredPlayers found in leagueData', {
+            hasLeagueData: !!leagueData,
+            registeredPlayersType: leagueData?.registeredPlayers ? typeof leagueData.registeredPlayers : 'undefined',
+            isArray: Array.isArray(leagueData?.registeredPlayers)
+          });
         }
       }
       if (newLeagueName !== undefined) {
