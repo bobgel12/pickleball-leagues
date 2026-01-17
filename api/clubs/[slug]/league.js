@@ -30,8 +30,11 @@ async function getClubId(supabase, slug) {
  */
 async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, registeredPlayers) {
   if (!registeredPlayers || !Array.isArray(registeredPlayers)) {
+    console.log('syncPlayersToDatabase: No registeredPlayers array provided');
     return;
   }
+
+  console.log(`syncPlayersToDatabase: Starting sync for league ${leagueId}, ${registeredPlayers.length} players`);
 
   try {
     // Get current players for this league
@@ -44,37 +47,44 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
     const incomingPlayerIds = new Set();
 
     // Process each player
+    let processedCount = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
+    
     for (const playerData of registeredPlayers) {
       if (!playerData.name || !playerData.name.trim()) {
+        console.warn('syncPlayersToDatabase: Skipping player with no name:', playerData);
         continue;
       }
+      
+      processedCount++;
 
       let playerId = null;
 
       // If player has an id that looks like a UUID, try to find existing player
       if (playerData.id && typeof playerData.id === 'string' && playerData.id.includes('-')) {
-        const { data: existingPlayer } = await supabase
+        const { data: existingPlayer, error: uuidError } = await supabase
           .from('players')
           .select('id')
           .eq('id', playerData.id)
           .eq('club_id', clubId)
-          .single();
+          .maybeSingle();
 
-        if (existingPlayer) {
+        if (existingPlayer && !uuidError) {
           playerId = existingPlayer.id;
         }
       }
 
       // If no existing player found by UUID, try to find by name
       if (!playerId) {
-        const { data: existingPlayer } = await supabase
+        const { data: existingPlayer, error: nameError } = await supabase
           .from('players')
           .select('id')
           .eq('club_id', clubId)
           .eq('name', playerData.name.trim())
-          .single();
+          .maybeSingle();
 
-        if (existingPlayer) {
+        if (existingPlayer && !nameError) {
           playerId = existingPlayer.id;
         }
       }
@@ -98,9 +108,11 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
         }
 
         playerId = newPlayer.id;
+        createdCount++;
+        console.log(`syncPlayersToDatabase: Created new player ${playerId} for ${playerData.name}`);
       } else {
         // Update existing player if needed
-        await supabase
+        const { error: updateError } = await supabase
           .from('players')
           .update({
             dupr_rating: playerData.duprRating || 4.50,
@@ -108,6 +120,12 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
             updated_at: new Date().toISOString()
           })
           .eq('id', playerId);
+        
+        if (!updateError) {
+          updatedCount++;
+        } else {
+          console.error(`syncPlayersToDatabase: Error updating player ${playerId}:`, updateError);
+        }
       }
 
       incomingPlayerIds.add(playerId);
@@ -117,7 +135,7 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
         ? new Date(playerData.registeredAt).toISOString()
         : new Date().toISOString();
 
-      await supabase
+      const { error: leaguePlayerError } = await supabase
         .from('league_players')
         .upsert({
           league_id: leagueDataId,
@@ -127,8 +145,12 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
           onConflict: 'league_id,player_id'
         });
 
+      if (leaguePlayerError) {
+        console.error(`syncPlayersToDatabase: Error upserting league_players for player ${playerId}:`, leaguePlayerError);
+      }
+
       // Create or update player_stats
-      await supabase
+      const { error: statsError } = await supabase
         .from('player_stats')
         .upsert({
           league_id: leagueDataId,
@@ -152,7 +174,13 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
         }, {
           onConflict: 'league_id,player_id'
         });
+
+      if (statsError) {
+        console.error(`syncPlayersToDatabase: Error upserting player_stats for player ${playerId}:`, statsError);
+      }
     }
+    
+    console.log(`syncPlayersToDatabase: Completed. Processed: ${processedCount}, Created: ${createdCount}, Updated: ${updatedCount}`);
 
     // Remove players that are no longer in the league
     const playersToRemove = Array.from(currentPlayerIds).filter(id => !incomingPlayerIds.has(id));
@@ -171,7 +199,19 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
     }
   } catch (error) {
     console.error('Error syncing players to database:', error);
+    console.error('Error details:', {
+      leagueDataId,
+      leagueId,
+      clubId,
+      playerCount: registeredPlayers?.length || 0,
+      errorMessage: error.message,
+      errorStack: error.stack
+    });
     // Don't throw - allow league update to continue even if player sync fails
+    // But re-throw in development to help debug
+    if (process.env.NODE_ENV === 'development') {
+      throw error;
+    }
   }
 }
 
@@ -431,6 +471,16 @@ export default async function handler(req, res) {
         throw error;
       }
 
+      // Sync players to normalized tables if registeredPlayers exists in leagueData
+      if (leagueData && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
+        try {
+          await syncPlayersToDatabase(supabase, data.id, data.league_id, clubId, leagueData.registeredPlayers);
+        } catch (syncError) {
+          console.error('Error syncing players during league creation:', syncError);
+          // Don't fail league creation if player sync fails, but log the error
+        }
+      }
+
       return res.status(201).json({ 
         success: true,
         league: {
@@ -517,7 +567,12 @@ export default async function handler(req, res) {
         
         // Sync players to normalized tables if registeredPlayers exists in leagueData
         if (leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
-          await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
+          try {
+            await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
+          } catch (syncError) {
+            console.error('Error syncing players during league update:', syncError);
+            // Don't fail league update if player sync fails, but log the error
+          }
         }
       }
       if (newLeagueName !== undefined) {
