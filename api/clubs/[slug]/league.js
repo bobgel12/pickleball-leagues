@@ -26,6 +26,156 @@ async function getClubId(supabase, slug) {
 }
 
 /**
+ * Sync players from leagueData to normalized tables
+ */
+async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, registeredPlayers) {
+  if (!registeredPlayers || !Array.isArray(registeredPlayers)) {
+    return;
+  }
+
+  try {
+    // Get current players for this league
+    const { data: currentLeaguePlayers } = await supabase
+      .from('league_players')
+      .select('player_id')
+      .eq('league_id', leagueDataId);
+
+    const currentPlayerIds = new Set((currentLeaguePlayers || []).map(lp => lp.player_id));
+    const incomingPlayerIds = new Set();
+
+    // Process each player
+    for (const playerData of registeredPlayers) {
+      if (!playerData.name || !playerData.name.trim()) {
+        continue;
+      }
+
+      let playerId = null;
+
+      // If player has an id that looks like a UUID, try to find existing player
+      if (playerData.id && typeof playerData.id === 'string' && playerData.id.includes('-')) {
+        const { data: existingPlayer } = await supabase
+          .from('players')
+          .select('id')
+          .eq('id', playerData.id)
+          .eq('club_id', clubId)
+          .single();
+
+        if (existingPlayer) {
+          playerId = existingPlayer.id;
+        }
+      }
+
+      // If no existing player found by UUID, try to find by name
+      if (!playerId) {
+        const { data: existingPlayer } = await supabase
+          .from('players')
+          .select('id')
+          .eq('club_id', clubId)
+          .eq('name', playerData.name.trim())
+          .single();
+
+        if (existingPlayer) {
+          playerId = existingPlayer.id;
+        }
+      }
+
+      // Create player if doesn't exist
+      if (!playerId) {
+        const { data: newPlayer, error: createError } = await supabase
+          .from('players')
+          .insert({
+            club_id: clubId,
+            name: playerData.name.trim(),
+            dupr_rating: playerData.duprRating || 4.50,
+            gender: playerData.gender || null
+          })
+          .select('id')
+          .single();
+
+        if (createError) {
+          console.error('Error creating player:', createError);
+          continue;
+        }
+
+        playerId = newPlayer.id;
+      } else {
+        // Update existing player if needed
+        await supabase
+          .from('players')
+          .update({
+            dupr_rating: playerData.duprRating || 4.50,
+            gender: playerData.gender || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', playerId);
+      }
+
+      incomingPlayerIds.add(playerId);
+
+      // Create or update league_players relationship
+      const registeredAt = playerData.registeredAt 
+        ? new Date(playerData.registeredAt).toISOString()
+        : new Date().toISOString();
+
+      await supabase
+        .from('league_players')
+        .upsert({
+          league_id: leagueDataId,
+          player_id: playerId,
+          registered_at: registeredAt
+        }, {
+          onConflict: 'league_id,player_id'
+        });
+
+      // Create or update player_stats
+      await supabase
+        .from('player_stats')
+        .upsert({
+          league_id: leagueDataId,
+          player_id: playerId,
+          cumulative_points: playerData.cumulativePoints || 0,
+          total_wins: playerData.totalWins || 0,
+          total_losses: playerData.totalLosses || 0,
+          points_scored: playerData.pointsScored || 0,
+          points_allowed: playerData.pointsAllowed || 0,
+          event_days_attended: playerData.eventDaysAttended || 0,
+          court_history: playerData.courtHistory || [],
+          ladder_position_history: playerData.ladderPositionHistory || [],
+          money_round_stats: playerData.moneyRoundStats || {
+            totalWins: 0,
+            totalLosses: 0,
+            totalContributions: 0,
+            totalPaid: 0,
+            contributionHistory: []
+          },
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'league_id,player_id'
+        });
+    }
+
+    // Remove players that are no longer in the league
+    const playersToRemove = Array.from(currentPlayerIds).filter(id => !incomingPlayerIds.has(id));
+    if (playersToRemove.length > 0) {
+      await supabase
+        .from('league_players')
+        .delete()
+        .eq('league_id', leagueDataId)
+        .in('player_id', playersToRemove);
+
+      await supabase
+        .from('player_stats')
+        .delete()
+        .eq('league_id', leagueDataId)
+        .in('player_id', playersToRemove);
+    }
+  } catch (error) {
+    console.error('Error syncing players to database:', error);
+    // Don't throw - allow league update to continue even if player sync fails
+  }
+}
+
+/**
  * Verify master key for admin operations
  */
 async function verifyAdminAccess(slug, masterKey) {
@@ -96,7 +246,7 @@ export default async function handler(req, res) {
           query = query.eq('league_name', leagueName);
         }
         
-        const { data, error } = await query.single();
+        const { data: leagueRecord, error } = await query.single();
 
         if (error) {
           if (error.code === 'PGRST116') {
@@ -105,16 +255,78 @@ export default async function handler(req, res) {
           throw error;
         }
 
+        // Load players from normalized tables
+        const { data: leaguePlayers, error: playersError } = await supabase
+          .from('league_players')
+          .select(`
+            registered_at,
+            player:player_id (
+              id,
+              name,
+              dupr_rating,
+              gender,
+              created_at
+            ),
+            stats:player_stats!player_stats_league_id_player_id_fkey (
+              cumulative_points,
+              total_wins,
+              total_losses,
+              points_scored,
+              points_allowed,
+              event_days_attended,
+              court_history,
+              ladder_position_history,
+              money_round_stats
+            )
+          `)
+          .eq('league_id', leagueRecord.id);
+
+        // Build registeredPlayers array from normalized data
+        const registeredPlayers = (leaguePlayers || []).map(lp => {
+          const player = lp.player;
+          const stats = lp.stats && lp.stats.length > 0 ? lp.stats[0] : null;
+          
+          return {
+            id: player?.id || null,
+            name: player?.name || '',
+            duprRating: player?.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+            gender: player?.gender || null,
+            registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
+            cumulativePoints: stats?.cumulative_points || 0,
+            totalWins: stats?.total_wins || 0,
+            totalLosses: stats?.total_losses || 0,
+            pointsScored: stats?.points_scored || 0,
+            pointsAllowed: stats?.points_allowed || 0,
+            eventDaysAttended: stats?.event_days_attended || 0,
+            courtHistory: stats?.court_history || [],
+            ladderPositionHistory: stats?.ladder_position_history || [],
+            moneyRoundStats: stats?.money_round_stats || {
+              totalWins: 0,
+              totalLosses: 0,
+              totalContributions: 0,
+              totalPaid: 0,
+              contributionHistory: []
+            }
+          };
+        });
+
+        // Merge players into league data (for backward compatibility)
+        const leagueData = leagueRecord.data || {};
+        const mergedLeagueData = {
+          ...leagueData,
+          registeredPlayers: registeredPlayers
+        };
+
         return res.status(200).json({ 
           league: {
-            id: data.id,
-            leagueId: data.league_id,
-            leagueName: data.league_name,
-            status: data.status,
-            description: data.description,
-            data: data.data,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at
+            id: leagueRecord.id,
+            leagueId: leagueRecord.league_id,
+            leagueName: leagueRecord.league_name,
+            status: leagueRecord.status,
+            description: leagueRecord.description,
+            data: mergedLeagueData,
+            createdAt: leagueRecord.created_at,
+            updatedAt: leagueRecord.updated_at
           }
         });
       }
@@ -130,11 +342,25 @@ export default async function handler(req, res) {
         throw error;
       }
 
+      // Get player counts from normalized tables for each league
+      const leagueIds = (data || []).map(l => l.id);
+      const { data: playerCounts } = leagueIds.length > 0 
+        ? await supabase
+            .from('league_players')
+            .select('league_id')
+            .in('league_id', leagueIds)
+        : { data: [] };
+
+      const playerCountMap = new Map();
+      (playerCounts || []).forEach(pc => {
+        playerCountMap.set(pc.league_id, (playerCountMap.get(pc.league_id) || 0) + 1);
+      });
+
       // Extract basic stats from data for each league
       const leagues = (data || []).map(league => {
         const leagueData = league.data || {};
-        const players = leagueData.registeredPlayers || [];
         const eventDays = leagueData.eventDays || [];
+        const playerCount = playerCountMap.get(league.id) || 0;
         
         return {
           id: league.id,
@@ -142,7 +368,7 @@ export default async function handler(req, res) {
           leagueName: league.league_name,
           status: league.status,
           description: league.description,
-          playerCount: players.length,
+          playerCount: playerCount,
           eventDaysCount: eventDays.length,
           createdAt: league.created_at,
           updatedAt: league.updated_at
@@ -288,6 +514,11 @@ export default async function handler(req, res) {
 
       if (leagueData !== undefined) {
         updates.data = leagueData;
+        
+        // Sync players to normalized tables if registeredPlayers exists in leagueData
+        if (leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
+          await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
+        }
       }
       if (newLeagueName !== undefined) {
         updates.league_name = newLeagueName.trim();
@@ -310,6 +541,64 @@ export default async function handler(req, res) {
         throw error;
       }
 
+      // Reload players from normalized tables for response
+      const { data: leaguePlayers } = await supabase
+        .from('league_players')
+        .select(`
+          registered_at,
+          player:player_id (
+            id,
+            name,
+            dupr_rating,
+            gender
+          ),
+          stats:player_stats!player_stats_league_id_player_id_fkey (
+            cumulative_points,
+            total_wins,
+            total_losses,
+            points_scored,
+            points_allowed,
+            event_days_attended,
+            court_history,
+            ladder_position_history,
+            money_round_stats
+          )
+        `)
+        .eq('league_id', existingLeague.id);
+
+      const registeredPlayers = (leaguePlayers || []).map(lp => {
+        const player = lp.player;
+        const stats = lp.stats && lp.stats.length > 0 ? lp.stats[0] : null;
+        
+        return {
+          id: player?.id || null,
+          name: player?.name || '',
+          duprRating: player?.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+          gender: player?.gender || null,
+          registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
+          cumulativePoints: stats?.cumulative_points || 0,
+          totalWins: stats?.total_wins || 0,
+          totalLosses: stats?.total_losses || 0,
+          pointsScored: stats?.points_scored || 0,
+          pointsAllowed: stats?.points_allowed || 0,
+          eventDaysAttended: stats?.event_days_attended || 0,
+          courtHistory: stats?.court_history || [],
+          ladderPositionHistory: stats?.ladder_position_history || [],
+          moneyRoundStats: stats?.money_round_stats || {
+            totalWins: 0,
+            totalLosses: 0,
+            totalContributions: 0,
+            totalPaid: 0,
+            contributionHistory: []
+          }
+        };
+      });
+
+      const mergedLeagueData = {
+        ...(data.data || {}),
+        registeredPlayers: registeredPlayers
+      };
+
       return res.status(200).json({ 
         success: true,
         league: {
@@ -318,7 +607,7 @@ export default async function handler(req, res) {
           leagueName: data.league_name,
           status: data.status,
           description: data.description,
-          data: data.data,
+          data: mergedLeagueData,
           createdAt: data.created_at,
           updatedAt: data.updated_at
         }

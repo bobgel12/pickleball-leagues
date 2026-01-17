@@ -367,7 +367,31 @@ export async function loadLeagueData(leagueId = null) {
     const result = await response.json();
     
     // Handle different response formats (single league vs list)
-    const league = result.league || result.data;
+    let league = null;
+    
+    if (result.league) {
+      // When loading a specific league, the API returns:
+      // { league: { id, leagueId, leagueName, status, description, data: {...}, createdAt, updatedAt } }
+      // We need to merge the metadata with the actual league data
+      const leagueMetadata = result.league;
+      const leagueData = leagueMetadata.data || {};
+      
+      // Merge metadata fields with the actual league data
+      league = {
+        ...leagueData, // All league data including registeredPlayers, eventDays, etc.
+        // Override with metadata fields if they exist (in case data has different values)
+        id: leagueMetadata.id,
+        leagueId: leagueMetadata.leagueId,
+        leagueName: leagueMetadata.leagueName,
+        status: leagueMetadata.status,
+        description: leagueMetadata.description,
+        createdAt: leagueMetadata.createdAt,
+        updatedAt: leagueMetadata.updatedAt
+      };
+    } else if (result.data) {
+      // Fallback for other response formats
+      league = result.data;
+    }
     
     if (league) {
       // Also save to localStorage as cache
@@ -568,6 +592,184 @@ export async function deleteLeague(leagueId = null, leagueName = null) {
     return true;
   } catch (error) {
     console.error('Error deleting league:', error);
+    throw error;
+  }
+}
+
+/**
+ * Load all players for a club
+ * @param {string} clubSlug - Club slug
+ * @returns {Array} Array of player objects
+ */
+export async function loadPlayers(clubSlug = null) {
+  const slug = clubSlug || getClubSlug();
+  if (!slug) {
+    console.warn('No club selected, cannot load players');
+    return [];
+  }
+
+  // If offline, return empty array
+  if (!checkOnline()) {
+    console.warn('Offline - cannot load players');
+    return [];
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${slug}/players`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return [];
+      }
+      throw new Error(`Failed to load players: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.players || [];
+  } catch (error) {
+    console.error('Error loading players:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a new player
+ * @param {string} clubSlug - Club slug
+ * @param {Object} playerData - Player data (name, duprRating, gender)
+ * @returns {Object} Created player object
+ */
+export async function createPlayer(clubSlug = null, playerData) {
+  const slug = clubSlug || getClubSlug();
+  if (!slug) {
+    throw new Error('No club selected, cannot create player');
+  }
+
+  if (!playerData.name || typeof playerData.name !== 'string' || playerData.name.trim() === '') {
+    throw new Error('Player name is required');
+  }
+
+  // If offline, throw error
+  if (!checkOnline()) {
+    throw new Error('Cannot create player while offline');
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${slug}/players`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: playerData.name.trim(),
+        duprRating: playerData.duprRating || 4.50,
+        gender: playerData.gender || null
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to create player: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.player;
+  } catch (error) {
+    console.error('Error creating player:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update a player
+ * @param {string} clubSlug - Club slug
+ * @param {string} playerId - Player ID
+ * @param {Object} updates - Player updates (name, duprRating, gender)
+ * @returns {Object} Updated player object
+ */
+export async function updatePlayer(clubSlug = null, playerId, updates) {
+  const slug = clubSlug || getClubSlug();
+  if (!slug) {
+    throw new Error('No club selected, cannot update player');
+  }
+
+  if (!playerId) {
+    throw new Error('playerId is required');
+  }
+
+  // If offline, throw error
+  if (!checkOnline()) {
+    throw new Error('Cannot update player while offline');
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${slug}/players`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        playerId: playerId,
+        name: updates.name,
+        duprRating: updates.duprRating,
+        gender: updates.gender
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to update player: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.player;
+  } catch (error) {
+    console.error('Error updating player:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a player
+ * @param {string} clubSlug - Club slug
+ * @param {string} playerId - Player ID
+ * @returns {boolean} True if successful
+ */
+export async function deletePlayer(clubSlug = null, playerId) {
+  const slug = clubSlug || getClubSlug();
+  if (!slug) {
+    throw new Error('No club selected, cannot delete player');
+  }
+
+  if (!playerId) {
+    throw new Error('playerId is required');
+  }
+
+  // If offline, throw error
+  if (!checkOnline()) {
+    throw new Error('Cannot delete player while offline');
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${slug}/players?playerId=${encodeURIComponent(playerId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to delete player: ${response.statusText}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting player:', error);
     throw error;
   }
 }
