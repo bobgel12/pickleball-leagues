@@ -392,7 +392,6 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
           });
         }
       }
-    }
 
     return true;
   }, [currentEventDay, updateEventDay, league, recordPartnerMatchup, calculateLadderMovement]);
