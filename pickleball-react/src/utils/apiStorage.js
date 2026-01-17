@@ -259,6 +259,9 @@ export async function saveLeagueData(data, leagueId = null) {
     }
   }
 
+  // Get master key from sessionStorage if available (for admin operations)
+  const masterKey = getStoredMasterKey();
+  
   try {
     const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
       method: 'PUT',
@@ -268,7 +271,8 @@ export async function saveLeagueData(data, leagueId = null) {
       body: JSON.stringify({ 
         data,
         leagueId: targetLeagueId,
-        leagueName: leagueName
+        leagueName: leagueName,
+        masterKey: masterKey // Include master key if available (for admin verification)
       }),
     });
 
@@ -439,7 +443,26 @@ export async function loadAllLeagues(clubSlug = null) {
 }
 
 /**
- * Create a new league
+ * Get stored master key from sessionStorage
+ */
+function getStoredMasterKey() {
+  if (typeof window === 'undefined') return null;
+  const clubSlug = getClubSlug();
+  if (!clubSlug) return null;
+  
+  try {
+    const key = `pickleball_admin_auth_${clubSlug}`;
+    const authData = sessionStorage.getItem(key);
+    if (!authData) return null;
+    const parsed = JSON.parse(authData);
+    return parsed.masterKey || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a new league (Admin only)
  * @param {string} leagueName - Name of the league (must be unique within club)
  * @param {string} description - Optional description
  * @param {Object} initialData - Optional initial league data
@@ -453,6 +476,12 @@ export async function createLeague(leagueName, description = null, initialData =
 
   if (!leagueName || typeof leagueName !== 'string' || leagueName.trim() === '') {
     throw new Error('League name is required');
+  }
+
+  // Get master key from sessionStorage (admin must be logged in)
+  const masterKey = getStoredMasterKey();
+  if (!masterKey) {
+    throw new Error('Admin access required. Please enter admin mode.');
   }
 
   // If offline, throw error
@@ -469,7 +498,8 @@ export async function createLeague(leagueName, description = null, initialData =
       body: JSON.stringify({
         leagueName: leagueName.trim(),
         description: description || null,
-        data: initialData || {}
+        data: initialData || {},
+        masterKey: masterKey
       }),
     });
 
@@ -487,7 +517,7 @@ export async function createLeague(leagueName, description = null, initialData =
 }
 
 /**
- * Delete a league
+ * Delete a league (Admin only)
  * @param {string} leagueId - ID of the league to delete
  * @param {string} leagueName - Alternative: name of the league to delete
  * @returns {boolean} True if successful
@@ -500,6 +530,12 @@ export async function deleteLeague(leagueId = null, leagueName = null) {
 
   if (!leagueId && !leagueName) {
     throw new Error('leagueId or leagueName is required');
+  }
+
+  // Get master key from sessionStorage (admin must be logged in)
+  const masterKey = getStoredMasterKey();
+  if (!masterKey) {
+    throw new Error('Admin access required. Please enter admin mode.');
   }
 
   // If offline, throw error
@@ -519,7 +555,8 @@ export async function deleteLeague(leagueId = null, leagueName = null) {
       },
       body: JSON.stringify({
         leagueId: leagueId,
-        leagueName: leagueName
+        leagueName: leagueName,
+        masterKey: masterKey
       }),
     });
 

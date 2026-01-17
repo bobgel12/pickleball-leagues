@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import bcrypt from 'bcryptjs';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // CORS headers helper
 function setCorsHeaders(res) {
@@ -21,6 +23,39 @@ async function getClubId(supabase, slug) {
     return null;
   }
   return club.id;
+}
+
+/**
+ * Verify master key for admin operations
+ */
+async function verifyAdminAccess(slug, masterKey) {
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return false;
+  }
+
+  if (!masterKey) {
+    return false;
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    const { data: club, error } = await supabase
+      .from('clubs')
+      .select('master_key_hash')
+      .eq('slug', slug)
+      .single();
+
+    if (error || !club) {
+      return false;
+    }
+
+    const isValid = await bcrypt.compare(masterKey, club.master_key_hash);
+    return isValid;
+  } catch (error) {
+    console.error('Error verifying admin access:', error);
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -117,8 +152,16 @@ export default async function handler(req, res) {
       return res.status(200).json({ leagues });
     }
 
-    // POST: Create new league
+    // POST: Create new league (Admin only)
     if (req.method === 'POST') {
+      // Verify admin access
+      const { masterKey } = req.body;
+      const isAdmin = await verifyAdminAccess(slug, masterKey);
+      
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Admin access required to create leagues' });
+      }
+
       const { leagueName, description, data: leagueData } = req.body;
 
       if (!leagueName || typeof leagueName !== 'string' || leagueName.trim() === '') {
@@ -178,8 +221,21 @@ export default async function handler(req, res) {
     }
 
     // PUT: Update existing league
+    // Admin required for metadata changes (name, description, status)
+    // Admin NOT required for data-only updates (players, matches, etc.)
     if (req.method === 'PUT') {
-      const { leagueId: bodyLeagueId, leagueName: bodyLeagueName, data: leagueData, leagueName: newLeagueName, description, status } = req.body;
+      const { leagueId: bodyLeagueId, leagueName: bodyLeagueName, data: leagueData, leagueName: newLeagueName, description, status, masterKey } = req.body;
+      
+      // Check if this is a metadata update (requires admin)
+      const isMetadataUpdate = newLeagueName !== undefined || description !== undefined || status !== undefined;
+      
+      if (isMetadataUpdate) {
+        // Verify admin access for metadata updates
+        const isAdmin = await verifyAdminAccess(slug, masterKey);
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Admin access required to update league metadata (name, description, status)' });
+        }
+      }
 
       // Determine which league to update
       const targetLeagueId = leagueId || bodyLeagueId;
@@ -269,8 +325,16 @@ export default async function handler(req, res) {
       });
     }
 
-    // DELETE: Delete league
+    // DELETE: Delete league (Admin only)
     if (req.method === 'DELETE') {
+      // Verify admin access
+      const { masterKey } = req.query.masterKey ? { masterKey: req.query.masterKey } : req.body || {};
+      const isAdmin = await verifyAdminAccess(slug, masterKey);
+      
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Admin access required to delete leagues' });
+      }
+
       const targetLeagueId = leagueId || req.body?.leagueId;
       const targetLeagueName = leagueName || req.body?.leagueName;
 

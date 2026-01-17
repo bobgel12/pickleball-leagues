@@ -13,7 +13,8 @@ export default function LeaguesDashboard({
   onCreateLeague,
   onDeleteLeague,
   onEditLeague,
-  toast
+  toast,
+  isAdmin = false
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
@@ -117,13 +118,15 @@ export default function LeaguesDashboard({
               Manage all leagues for this club
             </p>
           </div>
-          <button
-            className="btn primary"
-            onClick={() => setShowCreateModal(true)}
-          >
-            <Plus size={16} />
-            Create New League
-          </button>
+          {isAdmin && (
+            <button
+              className="btn primary"
+              onClick={() => setShowCreateModal(true)}
+            >
+              <Plus size={16} />
+              Create New League
+            </button>
+          )}
         </div>
 
         {leagues.length === 0 ? (
@@ -209,36 +212,38 @@ export default function LeaguesDashboard({
                     </div>
                   </div>
 
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: '8px', 
-                    justifyContent: 'flex-end',
-                    marginTop: '12px'
-                  }}>
-                    <button
-                      className="btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onEditLeague) {
-                          onEditLeague(league);
-                        }
-                      }}
-                      title="Edit league"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      className="btn danger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDeleteConfirm(league);
-                      }}
-                      title="Delete league"
-                      disabled={isDeleting}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div style={{ 
+                      display: 'flex', 
+                      gap: '8px', 
+                      justifyContent: 'flex-end',
+                      marginTop: '12px'
+                    }}>
+                      <button
+                        className="btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onEditLeague) {
+                            onEditLeague(league);
+                          }
+                        }}
+                        title="Edit league"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        className="btn danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteConfirm(league);
+                        }}
+                        title="Delete league"
+                        disabled={isDeleting}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

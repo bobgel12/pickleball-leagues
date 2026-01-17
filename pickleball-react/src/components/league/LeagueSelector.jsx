@@ -8,7 +8,8 @@ export default function LeagueSelector({
   onSelectLeague,
   onCreateLeague,
   onEditLeague,
-  className = ''
+  className = '',
+  isAdmin = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -183,7 +184,7 @@ export default function LeagueSelector({
                           }}
                           title={`Status: ${league.status || 'active'}`}
                         />
-                        {onEditLeague && (
+                        {isAdmin && onEditLeague && (
                           <button
                             className="btn"
                             onClick={(e) => {
@@ -204,7 +205,7 @@ export default function LeagueSelector({
               )}
             </div>
 
-            {onCreateLeague && (
+            {isAdmin && onCreateLeague && (
               <div style={{
                 borderTop: '1px solid var(--border)',
                 padding: '8px'

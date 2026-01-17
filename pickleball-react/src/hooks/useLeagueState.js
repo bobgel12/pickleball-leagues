@@ -1117,6 +1117,25 @@ export function useLeagueState() {
       throw new Error('League name is required');
     }
 
+    // Get master key from sessionStorage (admin must be logged in)
+    const getStoredMasterKey = () => {
+      if (typeof window === 'undefined' || !clubSlug) return null;
+      try {
+        const key = `pickleball_admin_auth_${clubSlug}`;
+        const authData = sessionStorage.getItem(key);
+        if (!authData) return null;
+        const parsed = JSON.parse(authData);
+        return parsed.masterKey || null;
+      } catch {
+        return null;
+      }
+    };
+
+    const masterKey = getStoredMasterKey();
+    if (!masterKey) {
+      throw new Error('Admin access required. Please enter admin mode.');
+    }
+
     try {
       // Update league name via API
       const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
@@ -1127,7 +1146,8 @@ export function useLeagueState() {
         body: JSON.stringify({
           leagueId,
           leagueName: newName.trim(),
-          description: description !== undefined ? description : null
+          description: description !== undefined ? description : null,
+          masterKey: masterKey
         }),
       });
 

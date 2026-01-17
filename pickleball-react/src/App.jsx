@@ -770,6 +770,7 @@ function App() {
             onDeleteLeague={handleDeleteLeague}
             onEditLeague={handleSelectLeagueForEdit}
             toast={toast}
+            isAdmin={adminAuth.isAdmin}
           />
         );
       case 'setup':
@@ -886,8 +887,9 @@ function App() {
         currentLeagueId={leagueState.currentLeagueId}
         currentLeague={leagueState.league}
         onSelectLeague={handleSwitchLeague}
-        onCreateLeague={handleShowCreateModal}
-        onEditLeague={handleSelectLeagueForEdit}
+        onCreateLeague={adminAuth.isAdmin ? handleShowCreateModal : null}
+        onEditLeague={adminAuth.isAdmin ? handleSelectLeagueForEdit : null}
+        isAdmin={adminAuth.isAdmin}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <ConfirmDialog

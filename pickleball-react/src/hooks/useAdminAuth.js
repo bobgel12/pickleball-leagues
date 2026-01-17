@@ -29,18 +29,43 @@ function isAdminAuthenticated(clubSlug) {
 
 /**
  * Store admin authentication for a club
+ * @param {string} clubSlug - Club slug
+ * @param {boolean} authenticated - Whether admin is authenticated
+ * @param {string} masterKey - Optional master key to store (for API calls)
  */
-function setAdminAuth(clubSlug, authenticated) {
+function setAdminAuth(clubSlug, authenticated, masterKey = null) {
   if (!clubSlug || typeof window === 'undefined') return;
   const key = getAdminAuthKey(clubSlug);
   
   if (authenticated) {
-    sessionStorage.setItem(key, JSON.stringify({
+    const authData = {
       authenticated: true,
       timestamp: Date.now()
-    }));
+    };
+    // Store master key temporarily for API calls (session only)
+    if (masterKey) {
+      authData.masterKey = masterKey;
+    }
+    sessionStorage.setItem(key, JSON.stringify(authData));
   } else {
     sessionStorage.removeItem(key);
+  }
+}
+
+/**
+ * Get stored master key for admin operations
+ */
+function getStoredMasterKey(clubSlug) {
+  if (!clubSlug || typeof window === 'undefined') return null;
+  const key = getAdminAuthKey(clubSlug);
+  const authData = sessionStorage.getItem(key);
+  if (!authData) return null;
+  
+  try {
+    const parsed = JSON.parse(authData);
+    return parsed.masterKey || null;
+  } catch {
+    return null;
   }
 }
 
@@ -105,7 +130,8 @@ export function useAdminAuth(clubSlug) {
       const verified = await verifyMasterKey(clubSlug, masterKey.trim());
       
       if (verified) {
-        setAdminAuth(clubSlug, true);
+        // Store master key temporarily for API calls
+        setAdminAuth(clubSlug, true, masterKey.trim());
         setIsAdmin(true);
         setError(null);
         return true;
@@ -146,6 +172,7 @@ export function useAdminAuth(clubSlug) {
     error,
     loginAdmin,
     logoutAdmin,
-    clearError
+    clearError,
+    getMasterKey: () => clubSlug ? getStoredMasterKey(clubSlug) : null
   };
 }
