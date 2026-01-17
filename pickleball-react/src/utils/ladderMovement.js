@@ -400,7 +400,8 @@ export function assignCourtsByPoints(checkedInPlayerIds, allPlayers) {
 /**
  * Assign courts randomly (for regular ladder league)
  * @param {Array} checkedInPlayerIds - IDs of players who checked in
- * @returns {Array} Court assignments
+ * @returns {Array} Court assignments (always returns 4 courts, but only fills as many as needed)
+ * Each court will have exactly 4 players (or the last court may have fewer if total is not a multiple of 4)
  */
 export function assignCourtsByRandom(checkedInPlayerIds) {
   // Shuffle players randomly using Fisher-Yates algorithm
@@ -410,10 +411,20 @@ export function assignCourtsByRandom(checkedInPlayerIds) {
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   
-  // Distribute evenly across 4 courts
+  // For doubles pickleball, we need exactly 4 players per court
+  // Distribute players so each court (except possibly the last) has 4 players
+  const playersPerCourt = 4;
+  
+  // Initialize all 4 courts (some may be empty)
   const courts = [[], [], [], []];
+  
+  // Distribute players across courts (4 per court)
   shuffled.forEach((playerId, index) => {
-    courts[index % 4].push(playerId);
+    const courtIndex = Math.floor(index / playersPerCourt);
+    // Only assign to valid court indices (0-3)
+    if (courtIndex < 4) {
+      courts[courtIndex].push(playerId);
+    }
   });
   
   return courts;
