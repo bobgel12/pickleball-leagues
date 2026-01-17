@@ -1,6 +1,6 @@
 {
   "installCommand": "npm ci --prefix pickleball-react && npm ci",
-  "buildCommand": "bash -c 'cd pickleball-react && npm run build'",
+  "buildCommand": "npm run build",
   "outputDirectory": ".",
   "rewrites": [
     {
@@ -13,15 +13,19 @@
     },
     {
       "source": "/simple",
-      "destination": "/index.html"
+      "destination": "/simple/index.html"
+    },
+    {
+      "source": "/simple/",
+      "destination": "/simple/index.html"
     },
     {
       "source": "/",
-      "destination": "/pickleball-react/dist/index.html"
+      "destination": "/index.html"
     },
     {
       "source": "/(.*)",
-      "destination": "/pickleball-react/dist/index.html"
+      "destination": "/index.html"
     }
   ],
   "headers": [
