@@ -719,10 +719,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'leagueId or leagueName is required' });
       }
 
-      // Find the league to update
+      // Find the league to update (also get existing data to merge)
       let findQuery = supabase
         .from('league_data')
-        .select('id, league_id, league_name')
+        .select('id, league_id, league_name, data')
         .eq('club_id', clubId);
       
       if (targetLeagueId) {
@@ -761,25 +761,38 @@ export default async function handler(req, res) {
       };
 
       if (leagueData !== undefined) {
-        // Log what's being saved to verify eventDays are included
+        // Merge incoming leagueData with existing JSONB data to preserve fields not being updated
+        // This prevents losing registeredPlayers, eventDays, etc. if they're missing in the update
+        const existingData = existingLeague.data || {};
+        const mergedLeagueData = {
+          ...existingData, // Preserve existing JSONB data (registeredPlayers, eventDays, etc.)
+          ...leagueData    // Overwrite with incoming updates
+        };
+        
+        // Log what's being saved to verify eventDays and registeredPlayers are included
         console.log(`PUT: Saving league data for league ${existingLeague.league_id}`, {
-          hasEventDays: !!leagueData.eventDays,
-          eventDaysCount: leagueData.eventDays?.length || 0,
-          eventDaysWithSchedule: leagueData.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
-          totalMatches: leagueData.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
-          completedMatches: leagueData.eventDays?.reduce((sum, day) => {
+          hasEventDays: !!mergedLeagueData.eventDays,
+          eventDaysCount: mergedLeagueData.eventDays?.length || 0,
+          eventDaysWithSchedule: mergedLeagueData.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
+          totalMatches: mergedLeagueData.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
+          completedMatches: mergedLeagueData.eventDays?.reduce((sum, day) => {
             const completed = day.schedule?.filter(m => m.status === 'completed').length || 0;
             return sum + completed;
-          }, 0) || 0
+          }, 0) || 0,
+          hasRegisteredPlayers: !!mergedLeagueData.registeredPlayers,
+          registeredPlayersCount: mergedLeagueData.registeredPlayers?.length || 0,
+          incomingPlayersCount: leagueData.registeredPlayers?.length || 0,
+          existingPlayersCount: existingData.registeredPlayers?.length || 0
         });
         
-        updates.data = leagueData;
+        updates.data = mergedLeagueData;
         
-        // Sync players to normalized tables if registeredPlayers exists in leagueData
-        if (leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
-          console.log(`PUT: Syncing ${leagueData.registeredPlayers.length} players for league ${existingLeague.league_id} (league_data.id: ${existingLeague.id})`);
+        // Sync players to normalized tables if registeredPlayers exists in mergedLeagueData
+        // Use mergedLeagueData instead of leagueData to ensure we sync all players (not just incoming)
+        if (mergedLeagueData.registeredPlayers && Array.isArray(mergedLeagueData.registeredPlayers)) {
+          console.log(`PUT: Syncing ${mergedLeagueData.registeredPlayers.length} players for league ${existingLeague.league_id} (league_data.id: ${existingLeague.id})`);
           try {
-            await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
+            await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, mergedLeagueData.registeredPlayers);
             console.log(`PUT: Successfully synced players for league ${existingLeague.league_id}`);
           } catch (syncError) {
             console.error('PUT: Error syncing players during league update:', syncError);
@@ -787,17 +800,22 @@ export default async function handler(req, res) {
               leagueDataId: existingLeague.id,
               leagueId: existingLeague.league_id,
               clubId,
-              playerCount: leagueData.registeredPlayers.length,
+              playerCount: mergedLeagueData.registeredPlayers.length,
               errorMessage: syncError.message,
               errorStack: syncError.stack
             });
             // Don't fail league update if player sync fails, but log the error
           }
         } else {
-          console.log('PUT: No registeredPlayers found in leagueData', {
-            hasLeagueData: !!leagueData,
-            registeredPlayersType: leagueData?.registeredPlayers ? typeof leagueData.registeredPlayers : 'undefined',
-            isArray: Array.isArray(leagueData?.registeredPlayers)
+          console.log('PUT: No registeredPlayers found in mergedLeagueData', {
+            hasMergedLeagueData: !!mergedLeagueData,
+            mergedPlayersCount: mergedLeagueData.registeredPlayers?.length || 0,
+            hasIncomingLeagueData: !!leagueData,
+            incomingPlayersCount: leagueData.registeredPlayers?.length || 0,
+            hasExistingData: !!existingData,
+            existingPlayersCount: existingData.registeredPlayers?.length || 0,
+            registeredPlayersType: mergedLeagueData?.registeredPlayers ? typeof mergedLeagueData.registeredPlayers : 'undefined',
+            isArray: Array.isArray(mergedLeagueData?.registeredPlayers)
           });
         }
       }
