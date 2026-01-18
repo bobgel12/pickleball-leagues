@@ -526,7 +526,18 @@ export default async function handler(req, res) {
           registeredPlayers: finalRegisteredPlayers
         };
         
+        // Log eventDays info from JSONB
         console.log(`GET: Loaded ${finalRegisteredPlayers.length} players for league ${leagueRecord.league_id} (${registeredPlayers.length} from normalized tables, ${leagueData.registeredPlayers?.length || 0} from JSONB)`);
+        console.log(`GET: eventDays from JSONB:`, {
+          hasEventDays: !!leagueData.eventDays,
+          eventDaysCount: leagueData.eventDays?.length || 0,
+          eventDaysWithSchedule: leagueData.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
+          totalMatches: leagueData.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
+          completedMatches: leagueData.eventDays?.reduce((sum, day) => {
+            const completed = day.schedule?.filter(m => m.status === 'completed').length || 0;
+            return sum + completed;
+          }, 0) || 0
+        });
 
         return res.status(200).json({ 
           league: {
@@ -750,6 +761,18 @@ export default async function handler(req, res) {
       };
 
       if (leagueData !== undefined) {
+        // Log what's being saved to verify eventDays are included
+        console.log(`PUT: Saving league data for league ${existingLeague.league_id}`, {
+          hasEventDays: !!leagueData.eventDays,
+          eventDaysCount: leagueData.eventDays?.length || 0,
+          eventDaysWithSchedule: leagueData.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
+          totalMatches: leagueData.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
+          completedMatches: leagueData.eventDays?.reduce((sum, day) => {
+            const completed = day.schedule?.filter(m => m.status === 'completed').length || 0;
+            return sum + completed;
+          }, 0) || 0
+        });
+        
         updates.data = leagueData;
         
         // Sync players to normalized tables if registeredPlayers exists in leagueData

@@ -262,6 +262,19 @@ export async function saveLeagueData(data, leagueId = null) {
   // Get master key from sessionStorage if available (for admin operations)
   const masterKey = getStoredMasterKey();
   
+  // Log what's being saved to verify eventDays are included
+  console.log('saveLeagueData: Saving league data', {
+    leagueId: targetLeagueId,
+    hasEventDays: !!data.eventDays,
+    eventDaysCount: data.eventDays?.length || 0,
+    eventDaysWithSchedule: data.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
+    totalMatches: data.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
+    completedMatches: data.eventDays?.reduce((sum, day) => {
+      const completed = day.schedule?.filter(m => m.status === 'completed').length || 0;
+      return sum + completed;
+    }, 0) || 0
+  });
+  
   try {
     const response = await fetch(`${getApiBase()}/${clubSlug}/league`, {
       method: 'PUT',
@@ -375,6 +388,18 @@ export async function loadLeagueData(leagueId = null) {
       // We need to merge the metadata with the actual league data
       const leagueMetadata = result.league;
       const leagueData = leagueMetadata.data || {};
+      
+      // Log what's being loaded to verify eventDays are included
+      console.log('loadLeagueData: Loading league data from API', {
+        hasEventDays: !!leagueData.eventDays,
+        eventDaysCount: leagueData.eventDays?.length || 0,
+        eventDaysWithSchedule: leagueData.eventDays?.filter(day => day.schedule && day.schedule.length > 0).length || 0,
+        totalMatches: leagueData.eventDays?.reduce((sum, day) => sum + (day.schedule?.length || 0), 0) || 0,
+        completedMatches: leagueData.eventDays?.reduce((sum, day) => {
+          const completed = day.schedule?.filter(m => m.status === 'completed').length || 0;
+          return sum + completed;
+        }, 0) || 0
+      });
       
       // Merge metadata fields with the actual league data
       league = {
