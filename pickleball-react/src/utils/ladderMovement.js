@@ -362,12 +362,40 @@ export function applyMovementToNextDay(movements, checkedInPlayers, allPlayers, 
  */
 export function assignCourtsByDupr(checkedInPlayerIds, allPlayers) {
   // Get checked-in players and sort by DUPR
+  // Handle ID type mismatches (numeric vs UUID) by trying both direct match and normalized match
   const checkedInPlayers = checkedInPlayerIds
-    .map(id => allPlayers.find(p => p.id === id))
-    .filter(Boolean)
-    .sort((a, b) => b.duprRating - a.duprRating);
+    .map(id => {
+      // First try direct match
+      let player = allPlayers.find(p => p.id === id);
+      
+      // If not found, try normalizing IDs (handle numeric string vs number, or UUID string vs numeric)
+      if (!player) {
+        const normalizedId = typeof id === 'string' && id.includes('-') 
+          ? id  // UUID string - keep as-is
+          : (typeof id === 'string' ? parseInt(id, 10) : id);  // Try parsing to number
+        
+        player = allPlayers.find(p => {
+          const playerId = typeof p.id === 'string' && p.id.includes('-')
+            ? p.id  // UUID - compare as string
+            : (typeof p.id === 'string' ? parseInt(p.id, 10) : p.id);  // Try parsing to number
+          return playerId === normalizedId;
+        });
+      }
+      
+      return player;
+    })
+    .filter(Boolean);
 
-  return distributePlayersToCourts(checkedInPlayers.map(p => p.id));
+  // If no players found, log warning and fall back to random assignment
+  if (checkedInPlayers.length === 0) {
+    console.warn('assignCourtsByDupr: No players matched. Checked-in IDs:', checkedInPlayerIds, 'Available IDs:', allPlayers.map(p => p.id));
+    // Fall back to random assignment to avoid breaking
+    return distributePlayersToCourts(checkedInPlayerIds);
+  }
+
+  const sortedPlayers = checkedInPlayers.sort((a, b) => b.duprRating - a.duprRating);
+
+  return distributePlayersToCourts(sortedPlayers.map(p => p.id));
 }
 
 /**
@@ -378,23 +406,51 @@ export function assignCourtsByDupr(checkedInPlayerIds, allPlayers) {
  */
 export function assignCourtsByPoints(checkedInPlayerIds, allPlayers) {
   // Get checked-in players and sort by cumulative points
+  // Handle ID type mismatches (numeric vs UUID) by trying both direct match and normalized match
   const checkedInPlayers = checkedInPlayerIds
-    .map(id => allPlayers.find(p => p.id === id))
-    .filter(Boolean)
-    .sort((a, b) => {
-      // Primary: cumulative points
-      if (b.cumulativePoints !== a.cumulativePoints) {
-        return b.cumulativePoints - a.cumulativePoints;
+    .map(id => {
+      // First try direct match
+      let player = allPlayers.find(p => p.id === id);
+      
+      // If not found, try normalizing IDs (handle numeric string vs number, or UUID string vs numeric)
+      if (!player) {
+        const normalizedId = typeof id === 'string' && id.includes('-') 
+          ? id  // UUID string - keep as-is
+          : (typeof id === 'string' ? parseInt(id, 10) : id);  // Try parsing to number
+        
+        player = allPlayers.find(p => {
+          const playerId = typeof p.id === 'string' && p.id.includes('-')
+            ? p.id  // UUID - compare as string
+            : (typeof p.id === 'string' ? parseInt(p.id, 10) : p.id);  // Try parsing to number
+          return playerId === normalizedId;
+        });
       }
-      // Secondary: win percentage
-      const winPctA = a.totalWins + a.totalLosses > 0 
-        ? a.totalWins / (a.totalWins + a.totalLosses) : 0;
-      const winPctB = b.totalWins + b.totalLosses > 0 
-        ? b.totalWins / (b.totalWins + b.totalLosses) : 0;
-      return winPctB - winPctA;
-    });
+      
+      return player;
+    })
+    .filter(Boolean);
 
-  return distributePlayersToCourts(checkedInPlayers.map(p => p.id));
+  // If no players found, log warning and fall back to random assignment
+  if (checkedInPlayers.length === 0) {
+    console.warn('assignCourtsByPoints: No players matched. Checked-in IDs:', checkedInPlayerIds, 'Available IDs:', allPlayers.map(p => p.id));
+    // Fall back to random assignment to avoid breaking
+    return distributePlayersToCourts(checkedInPlayerIds);
+  }
+
+  const sortedPlayers = checkedInPlayers.sort((a, b) => {
+    // Primary: cumulative points
+    if (b.cumulativePoints !== a.cumulativePoints) {
+      return b.cumulativePoints - a.cumulativePoints;
+    }
+    // Secondary: win percentage
+    const winPctA = a.totalWins + a.totalLosses > 0 
+      ? a.totalWins / (a.totalWins + a.totalLosses) : 0;
+    const winPctB = b.totalWins + b.totalLosses > 0 
+      ? b.totalWins / (b.totalWins + b.totalLosses) : 0;
+    return winPctB - winPctA;
+  });
+
+  return distributePlayersToCourts(sortedPlayers.map(p => p.id));
 }
 
 /**

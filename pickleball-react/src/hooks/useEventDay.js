@@ -62,37 +62,66 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
 
   // Close check-in and generate courts
   const closeCheckInAndGenerateCourts = useCallback((enableMoneyRound = false) => {
-    if (!currentEventDay) return false;
-    if (currentEventDay.checkedInPlayers.length < 4) return false;
+    if (!currentEventDay) {
+      console.error('closeCheckInAndGenerateCourts: No current event day');
+      return false;
+    }
+    if (currentEventDay.checkedInPlayers.length < 4) {
+      console.error('closeCheckInAndGenerateCourts: Need at least 4 players', currentEventDay.checkedInPlayers.length);
+      return false;
+    }
 
     // For regular ladder league, validate multiple of 4
     if (league.leagueMode === 'regular') {
       if (currentEventDay.checkedInPlayers.length % 4 !== 0) {
         // Return false and let the caller show error message
+        console.error('closeCheckInAndGenerateCourts: Regular league requires multiple of 4', currentEventDay.checkedInPlayers.length);
         return false;
       }
     }
 
     // Determine court assignments based on league mode
     let courtAssignments;
-    if (league.leagueMode === 'regular') {
-      // Regular ladder league: always use random seeding
-      courtAssignments = assignCourtsByRandom(currentEventDay.checkedInPlayers);
-    } else {
-      // Mixed doubles: use DUPR/points-based seeding
-      if (currentEventDay.dayNumber === 1) {
-        // Day 1: Assign by DUPR
-        courtAssignments = assignCourtsByDupr(
-          currentEventDay.checkedInPlayers,
-          league.registeredPlayers
-        );
+    try {
+      if (league.leagueMode === 'regular') {
+        // Regular ladder league: always use random seeding
+        courtAssignments = assignCourtsByRandom(currentEventDay.checkedInPlayers);
       } else {
-        // Day 2+: Assign by cumulative points
-        courtAssignments = assignCourtsByPoints(
-          currentEventDay.checkedInPlayers,
-          league.registeredPlayers
-        );
+        // Mixed doubles: use DUPR/points-based seeding
+        if (currentEventDay.dayNumber === 1) {
+          // Day 1: Assign by DUPR
+          courtAssignments = assignCourtsByDupr(
+            currentEventDay.checkedInPlayers,
+            league.registeredPlayers
+          );
+        } else {
+          // Day 2+: Assign by cumulative points
+          courtAssignments = assignCourtsByPoints(
+            currentEventDay.checkedInPlayers,
+            league.registeredPlayers
+          );
+        }
       }
+
+      // Validate court assignments
+      if (!courtAssignments || !Array.isArray(courtAssignments) || courtAssignments.length !== 4) {
+        console.error('closeCheckInAndGenerateCourts: Invalid court assignments', courtAssignments);
+        return false;
+      }
+
+      // Check if at least one court has players
+      const totalPlayers = courtAssignments.flat().length;
+      if (totalPlayers === 0) {
+        console.error('closeCheckInAndGenerateCourts: No players in court assignments', {
+          checkedInPlayers: currentEventDay.checkedInPlayers,
+          registeredPlayersCount: league.registeredPlayers.length,
+          courtAssignments
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('closeCheckInAndGenerateCourts: Error generating court assignments', error);
+      return false;
     }
 
     // Generate round-robin schedule for all courts
