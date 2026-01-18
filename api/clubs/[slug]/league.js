@@ -427,7 +427,171 @@ export default async function handler(req, res) {
         
         // AUTO-SYNC: If normalized tables are empty but JSONB has players, sync them
         let finalRegisteredPlayers = registeredPlayers;
-        if (registeredPlayers.length === 0 && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length > 0) {
+        
+        // RECOVERY: If both normalized tables AND JSONB registeredPlayers are empty,
+        // but eventDays have matches/checkedInPlayers with player IDs, recover players from matches
+        if (registeredPlayers.length === 0 && (!leagueData.registeredPlayers || leagueData.registeredPlayers.length === 0)) {
+          // Extract player IDs from eventDays (checkedInPlayers, matches)
+          const recoveredPlayerIds = new Set();
+          
+          if (leagueData.eventDays && Array.isArray(leagueData.eventDays)) {
+            leagueData.eventDays.forEach(eventDay => {
+              // Get IDs from checkedInPlayers
+              if (eventDay.checkedInPlayers && Array.isArray(eventDay.checkedInPlayers)) {
+                eventDay.checkedInPlayers.forEach(id => {
+                  if (id != null) recoveredPlayerIds.add(id);
+                });
+              }
+              
+              // Get IDs from matches (teamA, teamB)
+              if (eventDay.schedule && Array.isArray(eventDay.schedule)) {
+                eventDay.schedule.forEach(match => {
+                  if (match.teamA && Array.isArray(match.teamA)) {
+                    match.teamA.forEach(id => { if (id != null) recoveredPlayerIds.add(id); });
+                  }
+                  if (match.teamB && Array.isArray(match.teamB)) {
+                    match.teamB.forEach(id => { if (id != null) recoveredPlayerIds.add(id); });
+                  }
+                });
+              }
+              
+              // Get IDs from courtAssignments
+              if (eventDay.courtAssignments && Array.isArray(eventDay.courtAssignments)) {
+                eventDay.courtAssignments.forEach(court => {
+                  if (Array.isArray(court)) {
+                    court.forEach(id => { if (id != null) recoveredPlayerIds.add(id); });
+                  }
+                });
+              }
+            });
+          }
+          
+          if (recoveredPlayerIds.size > 0) {
+            console.log(`GET: RECOVERY triggered - found ${recoveredPlayerIds.size} player IDs in eventDays for league ${leagueRecord.league_id}`);
+            console.log(`GET: Recovered player IDs:`, Array.from(recoveredPlayerIds));
+            
+            try {
+              // Load players from players table by IDs
+              const recoveredIds = Array.from(recoveredPlayerIds);
+              const { data: recoveredPlayers, error: recoverError } = await supabase
+                .from('players')
+                .select('id, name, dupr_rating, gender, created_at')
+                .in('id', recoveredIds)
+                .eq('club_id', clubId);
+              
+              if (recoverError) {
+                console.error('GET: Error recovering players:', recoverError);
+              } else if (recoveredPlayers && recoveredPlayers.length > 0) {
+                console.log(`GET: Recovered ${recoveredPlayers.length} players from players table`);
+                
+                // Reconstruct registeredPlayers with default stats
+                const recoveredRegisteredPlayers = recoveredPlayers.map(player => ({
+                  id: player.id || null,
+                  name: player.name || '',
+                  duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+                  gender: player.gender || null,
+                  registeredAt: Date.now(), // Use current time as fallback
+                  cumulativePoints: 0,
+                  totalWins: 0,
+                  totalLosses: 0,
+                  pointsScored: 0,
+                  pointsAllowed: 0,
+                  eventDaysAttended: 0,
+                  courtHistory: [],
+                  ladderPositionHistory: [],
+                  moneyRoundStats: {
+                    totalWins: 0,
+                    totalLosses: 0,
+                    totalContributions: 0,
+                    totalPaid: 0,
+                    contributionHistory: []
+                  }
+                }));
+                
+                // Sync recovered players to normalized tables
+                console.log(`GET: Syncing ${recoveredRegisteredPlayers.length} recovered players to normalized tables`);
+                await syncPlayersToDatabase(supabase, leagueRecord.id, leagueRecord.league_id, clubId, recoveredRegisteredPlayers);
+                
+                // Reload from normalized tables after sync
+                const { data: syncedRecoveredPlayers, error: reloadError } = await supabase
+                  .from('league_players')
+                  .select(`
+                    registered_at,
+                    player_id,
+                    player:player_id (
+                      id,
+                      name,
+                      dupr_rating,
+                      gender,
+                      created_at
+                    )
+                  `)
+                  .eq('league_id', leagueRecord.id);
+                
+                if (!reloadError && syncedRecoveredPlayers && syncedRecoveredPlayers.length > 0) {
+                  // Reload stats
+                  const syncedIds = syncedRecoveredPlayers.map(lp => lp.player_id).filter(Boolean);
+                  let recoveredStatsMap = new Map();
+                  
+                  if (syncedIds.length > 0) {
+                    const { data: recoveredStats } = await supabase
+                      .from('player_stats')
+                      .select('*')
+                      .eq('league_id', leagueRecord.id)
+                      .in('player_id', syncedIds);
+                    
+                    (recoveredStats || []).forEach(stat => {
+                      recoveredStatsMap.set(stat.player_id, stat);
+                    });
+                  }
+                  
+                  // Build final array from normalized tables
+                  finalRegisteredPlayers = syncedRecoveredPlayers.map(lp => {
+                    const player = lp.player;
+                    const stats = recoveredStatsMap.get(lp.player_id) || null;
+                    
+                    if (!player) return null;
+                    
+                    return {
+                      id: player.id || null,
+                      name: player.name || '',
+                      duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+                      gender: player.gender || null,
+                      registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
+                      cumulativePoints: stats?.cumulative_points || 0,
+                      totalWins: stats?.total_wins || 0,
+                      totalLosses: stats?.total_losses || 0,
+                      pointsScored: stats?.points_scored || 0,
+                      pointsAllowed: stats?.points_allowed || 0,
+                      eventDaysAttended: stats?.event_days_attended || 0,
+                      courtHistory: stats?.court_history || [],
+                      ladderPositionHistory: stats?.ladder_position_history || [],
+                      moneyRoundStats: stats?.money_round_stats || {
+                        totalWins: 0,
+                        totalLosses: 0,
+                        totalContributions: 0,
+                        totalPaid: 0,
+                        contributionHistory: []
+                      }
+                    };
+                  }).filter(Boolean);
+                  
+                  console.log(`GET: RECOVERY completed - ${finalRegisteredPlayers.length} players restored and synced`);
+                } else {
+                  console.warn('GET: RECOVERY sync didn\'t populate normalized tables, using recovered players from memory');
+                  finalRegisteredPlayers = recoveredRegisteredPlayers;
+                }
+              } else {
+                console.warn(`GET: RECOVERY found ${recoveredPlayerIds.size} player IDs but couldn't load players from database`);
+              }
+            } catch (recoveryErr) {
+              console.error(`GET: Error during RECOVERY for league ${leagueRecord.league_id}:`, recoveryErr);
+            }
+          }
+        }
+        
+        // AUTO-SYNC: If normalized tables are empty but JSONB has players, sync them
+        if (registeredPlayers.length === 0 && finalRegisteredPlayers.length === 0 && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length > 0) {
           console.log(`GET: Auto-sync triggered - normalized tables empty but JSONB has ${leagueData.registeredPlayers.length} players for league ${leagueRecord.league_id}`);
           console.log(`GET: Syncing players from JSONB to normalized tables using league_data.id: ${leagueRecord.id}`);
           
