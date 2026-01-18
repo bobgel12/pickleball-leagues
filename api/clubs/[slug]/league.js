@@ -471,26 +471,28 @@ export default async function handler(req, res) {
             console.log(`GET: Recovered player IDs:`, Array.from(recoveredPlayerIds));
             
             try {
-              // Load players from players table by IDs
+              // Recovered IDs might be numeric (frontend IDs) or UUIDs (database IDs)
+              // Create placeholder players with numeric IDs for frontend compatibility
+              // The syncPlayersToDatabase will map these to UUIDs in the database
               const recoveredIds = Array.from(recoveredPlayerIds);
-              const { data: recoveredPlayers, error: recoverError } = await supabase
-                .from('players')
-                .select('id, name, dupr_rating, gender, created_at')
-                .in('id', recoveredIds)
-                .eq('club_id', clubId);
               
-              if (recoverError) {
-                console.error('GET: Error recovering players:', recoverError);
-              } else if (recoveredPlayers && recoveredPlayers.length > 0) {
-                console.log(`GET: Recovered ${recoveredPlayers.length} players from players table`);
-                
-                // Reconstruct registeredPlayers with default stats
-                const recoveredRegisteredPlayers = recoveredPlayers.map(player => ({
-                  id: player.id || null,
-                  name: player.name || '',
-                  duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
-                  gender: player.gender || null,
-                  registeredAt: Date.now(), // Use current time as fallback
+              // Try to load players from database first (in case they're UUIDs or match by name somehow)
+              // But since matches use numeric IDs, this likely won't find anything
+              // We'll create placeholder players instead
+              
+              console.log(`GET: Creating placeholder players for ${recoveredIds.length} numeric IDs (frontend format)`);
+              
+              // Create placeholder registeredPlayers with numeric IDs
+              // These will be synced to database where UUIDs will be assigned/generated
+              const recoveredRegisteredPlayers = recoveredIds.map(playerId => {
+                // Use numeric ID as-is for frontend compatibility
+                // syncPlayersToDatabase will handle UUID mapping when syncing
+                return {
+                  id: playerId, // Keep numeric ID for frontend
+                  name: `Player ${playerId}`, // Placeholder name - will need to be updated
+                  duprRating: 4.5,
+                  gender: null,
+                  registeredAt: Date.now(),
                   cumulativePoints: 0,
                   totalWins: 0,
                   totalLosses: 0,
@@ -506,84 +508,16 @@ export default async function handler(req, res) {
                     totalPaid: 0,
                     contributionHistory: []
                   }
-                }));
-                
-                // Sync recovered players to normalized tables
-                console.log(`GET: Syncing ${recoveredRegisteredPlayers.length} recovered players to normalized tables`);
-                await syncPlayersToDatabase(supabase, leagueRecord.id, leagueRecord.league_id, clubId, recoveredRegisteredPlayers);
-                
-                // Reload from normalized tables after sync
-                const { data: syncedRecoveredPlayers, error: reloadError } = await supabase
-                  .from('league_players')
-                  .select(`
-                    registered_at,
-                    player_id,
-                    player:player_id (
-                      id,
-                      name,
-                      dupr_rating,
-                      gender,
-                      created_at
-                    )
-                  `)
-                  .eq('league_id', leagueRecord.id);
-                
-                if (!reloadError && syncedRecoveredPlayers && syncedRecoveredPlayers.length > 0) {
-                  // Reload stats
-                  const syncedIds = syncedRecoveredPlayers.map(lp => lp.player_id).filter(Boolean);
-                  let recoveredStatsMap = new Map();
-                  
-                  if (syncedIds.length > 0) {
-                    const { data: recoveredStats } = await supabase
-                      .from('player_stats')
-                      .select('*')
-                      .eq('league_id', leagueRecord.id)
-                      .in('player_id', syncedIds);
-                    
-                    (recoveredStats || []).forEach(stat => {
-                      recoveredStatsMap.set(stat.player_id, stat);
-                    });
-                  }
-                  
-                  // Build final array from normalized tables
-                  finalRegisteredPlayers = syncedRecoveredPlayers.map(lp => {
-                    const player = lp.player;
-                    const stats = recoveredStatsMap.get(lp.player_id) || null;
-                    
-                    if (!player) return null;
-                    
-                    return {
-                      id: player.id || null,
-                      name: player.name || '',
-                      duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
-                      gender: player.gender || null,
-                      registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
-                      cumulativePoints: stats?.cumulative_points || 0,
-                      totalWins: stats?.total_wins || 0,
-                      totalLosses: stats?.total_losses || 0,
-                      pointsScored: stats?.points_scored || 0,
-                      pointsAllowed: stats?.points_allowed || 0,
-                      eventDaysAttended: stats?.event_days_attended || 0,
-                      courtHistory: stats?.court_history || [],
-                      ladderPositionHistory: stats?.ladder_position_history || [],
-                      moneyRoundStats: stats?.money_round_stats || {
-                        totalWins: 0,
-                        totalLosses: 0,
-                        totalContributions: 0,
-                        totalPaid: 0,
-                        contributionHistory: []
-                      }
-                    };
-                  }).filter(Boolean);
-                  
-                  console.log(`GET: RECOVERY completed - ${finalRegisteredPlayers.length} players restored and synced`);
-                } else {
-                  console.warn('GET: RECOVERY sync didn\'t populate normalized tables, using recovered players from memory');
-                  finalRegisteredPlayers = recoveredRegisteredPlayers;
-                }
-              } else {
-                console.warn(`GET: RECOVERY found ${recoveredPlayerIds.size} player IDs but couldn't load players from database`);
-              }
+                };
+              });
+              
+              // Use recovered players directly (with numeric IDs) for frontend
+              // Don't sync to database because that would create UUIDs and break ID mapping
+              // Frontend matches use numeric IDs, so players must have numeric IDs too
+              finalRegisteredPlayers = recoveredRegisteredPlayers;
+              
+              console.log(`GET: RECOVERY completed - ${finalRegisteredPlayers.length} placeholder players created with numeric IDs`);
+              console.log(`GET: Note: These players have numeric IDs to match match data. Names are placeholders and should be updated.`);
             } catch (recoveryErr) {
               console.error(`GET: Error during RECOVERY for league ${leagueRecord.league_id}:`, recoveryErr);
             }
@@ -698,7 +632,11 @@ export default async function handler(req, res) {
         };
         
         // Log eventDays info from JSONB
+        console.log(`GET: Final registeredPlayers count: ${finalRegisteredPlayers.length} for league ${leagueRecord.league_id}`);
         console.log(`GET: Loaded ${finalRegisteredPlayers.length} players for league ${leagueRecord.league_id} (${registeredPlayers.length} from normalized tables, ${leagueData.registeredPlayers?.length || 0} from JSONB)`);
+        if (finalRegisteredPlayers.length > 0) {
+          console.log(`GET: Sample player IDs:`, finalRegisteredPlayers.slice(0, 3).map(p => p.id));
+        }
         console.log(`GET: eventDays from JSONB:`, {
           hasEventDays: !!leagueData.eventDays,
           eventDaysCount: leagueData.eventDays?.length || 0,

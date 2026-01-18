@@ -54,6 +54,46 @@ export default function LeagueStandings({
     
     const historyByPlayer = {};
     
+    // Build mapping from numeric IDs to UUIDs
+    // Matches may use numeric IDs (1, 2, 3...) but players now have UUIDs
+    // Map by matching numeric IDs in courtAssignments with UUIDs based on court positions and stats
+    const numericIdToPlayerIdMap = new Map();
+    if (league.registeredPlayers && league.registeredPlayers.length > 0) {
+      const firstPlayerHasUuid = league.registeredPlayers[0]?.id?.includes('-');
+      
+      if (firstPlayerHasUuid && league.eventDays) {
+        league.eventDays.forEach(eventDay => {
+          if (eventDay.courtAssignments && Array.isArray(eventDay.courtAssignments)) {
+            // Build mapping from court assignments: numeric IDs in courtAssignments map to UUIDs by position
+            eventDay.courtAssignments.forEach((court, courtIndex) => {
+              if (Array.isArray(court)) {
+                court.forEach((numericId, positionInCourt) => {
+                  const normalizedNumericId = typeof numericId === 'string' ? parseInt(numericId, 10) : numericId;
+                  if (!isNaN(normalizedNumericId)) {
+                    // Try to find UUID player who played on this court on this day
+                    // Match by courtHistory: [{ court: courtIndex, dayNumber: eventDay.dayNumber }]
+                    const matchingPlayer = league.registeredPlayers.find(p => {
+                      if (p.courtHistory && Array.isArray(p.courtHistory)) {
+                        return p.courtHistory.some(ch => 
+                          ch.court === courtIndex && ch.dayNumber === eventDay.dayNumber
+                        );
+                      }
+                      return false;
+                    });
+                    
+                    // If found by courtHistory, map numeric ID to UUID
+                    if (matchingPlayer && matchingPlayer.id && !numericIdToPlayerIdMap.has(normalizedNumericId)) {
+                      numericIdToPlayerIdMap.set(normalizedNumericId, matchingPlayer.id);
+                    }
+                  }
+                });
+              }
+            });
+          }
+        });
+      }
+    }
+    
     // Iterate through all event days
     league.eventDays.forEach(eventDay => {
       if (!eventDay.schedule || eventDay.schedule.length === 0) return;
@@ -66,18 +106,50 @@ export default function LeagueStandings({
         
         // For each player in the match, add it to their history
         allPlayers.forEach(playerId => {
-          if (!historyByPlayer[playerId]) {
-            historyByPlayer[playerId] = [];
+          // Normalize player ID - might be numeric (from old matches) or UUID (from current players)
+          const normalizedId = typeof playerId === 'string' && playerId.includes('-')
+            ? playerId  // UUID - use as-is
+            : (typeof playerId === 'string' ? parseInt(playerId, 10) : playerId);
+          
+          // Map numeric ID to UUID if mapping exists
+          const lookupId = (typeof normalizedId === 'number' && !isNaN(normalizedId) && numericIdToPlayerIdMap.has(normalizedId))
+            ? numericIdToPlayerIdMap.get(normalizedId)  // Use mapped UUID
+            : normalizedId;  // Use original ID
+          
+          if (!lookupId) return; // Skip invalid IDs
+          
+          // Use string key for consistency (both numbers and UUIDs become strings)
+          const keyId = String(lookupId);
+          
+          if (!historyByPlayer[keyId]) {
+            historyByPlayer[keyId] = [];
           }
           
-          // Determine if player was on team A or B
+          // Determine if player was on team A or B (check using original playerId for includes)
           const playerTeam = match.teamA.includes(playerId) ? 'A' : 'B';
           const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
-          const teammates = (playerTeam === 'A' ? match.teamA : match.teamB).filter(id => id !== playerId);
-          const opponents = playerTeam === 'A' ? match.teamB : match.teamA;
+          const teammates = (playerTeam === 'A' ? match.teamA : match.teamB).filter(id => {
+              // Map teammate IDs too
+              const teammateId = typeof id === 'string' && id.includes('-')
+                ? id
+                : (typeof id === 'string' ? parseInt(id, 10) : id);
+              const mappedTeammateId = (typeof teammateId === 'number' && !isNaN(teammateId) && numericIdToPlayerIdMap.has(teammateId))
+                ? numericIdToPlayerIdMap.get(teammateId)
+                : teammateId;
+              return mappedTeammateId && mappedTeammateId !== lookupId;
+            });
+          const opponents = (playerTeam === 'A' ? match.teamB : match.teamA).map(id => {
+              // Map opponent IDs too
+              const opponentId = typeof id === 'string' && id.includes('-')
+                ? id
+                : (typeof id === 'string' ? parseInt(id, 10) : id);
+              return (typeof opponentId === 'number' && !isNaN(opponentId) && numericIdToPlayerIdMap.has(opponentId))
+                ? numericIdToPlayerIdMap.get(opponentId)
+                : opponentId;
+            });
           const won = match.winner === playerTeam;
           
-          historyByPlayer[playerId].push({
+          historyByPlayer[keyId].push({
             eventDayId: eventDay.id,
             dayNumber: eventDay.dayNumber,
             matchId: match.id,
@@ -343,7 +415,9 @@ export default function LeagueStandings({
                     </td>
                   </tr>
                   {isExpanded && (() => {
-                    const matches = playerMatchHistory[player.id] || [];
+                    // Use player.id directly (can be UUID or number) as string key for lookup
+                    const lookupKey = String(player.id);
+                    const matches = playerMatchHistory[lookupKey] || [];
                     
                     if (matches.length === 0) {
                       return (
