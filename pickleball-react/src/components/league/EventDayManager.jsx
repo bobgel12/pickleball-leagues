@@ -27,7 +27,8 @@ export default function EventDayManager({
   onNavigate,
   toast,
   isCurrentRoundComplete,
-  onSubmitRound
+  onSubmitRound,
+  onFinishAndContinue
 }) {
   const [showMovementPreview, setShowMovementPreview] = useState(false);
 
@@ -62,6 +63,31 @@ export default function EventDayManager({
       }
     }
   };
+
+  const handleFinishAndContinue = () => {
+    const nextDayNumber = currentEventDay.dayNumber + 1;
+    const confirmed = window.confirm(
+      `Finish Event Day ${currentEventDay.dayNumber} and start Event Day ${nextDayNumber}?\n\n` +
+      'Player stats will be updated and ladder movement will be applied.'
+    );
+    if (confirmed) {
+      if (onFinishAndContinue) {
+        const success = onFinishAndContinue();
+        if (success) {
+          if (toast) toast.success(`Event Day ${currentEventDay.dayNumber} completed! Event Day ${nextDayNumber} started.`);
+          // Stay on eventDay view - the new day will be shown
+        } else {
+          if (toast) toast.error('Failed to start next event day. You may have reached the maximum number of event days.');
+        }
+      }
+    }
+  };
+
+  // Check if we can start a new event day
+  const canStartNextDay = league && 
+    league.status !== 'completed' &&
+    league.registeredPlayers.length >= 4 &&
+    (league.eventDays || []).filter(d => d.status === 'completed').length < (league.totalEventDays || 10);
 
   return (
     <div className="league-fullscreen">
@@ -202,28 +228,41 @@ export default function EventDayManager({
                     color: 'var(--text-secondary)', 
                     fontSize: '14px' 
                   }}>
-                    All matches in this round have been scored. Submit to apply ladder movement and generate next round.
+                    All matches in this round have been scored. Submit to apply ladder movement and generate next round, or complete the event day now.
                   </p>
                 </div>
-                <button 
-                  className="btn primary" 
-                  onClick={() => {
-                    const success = onSubmitRound();
-                    if (success) {
-                      if (toast) toast.success('Round submitted! Ladder movement applied.');
-                    } else {
-                      if (toast) toast.error('Failed to submit round. Please try again.');
-                    }
-                  }}
-                  style={{ 
-                    padding: '14px 32px', 
-                    fontSize: '16px',
-                    fontWeight: '600'
-                  }}
-                >
-                  <Send size={18} style={{ marginRight: '8px' }} />
-                  Submit Round
-                </button>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button 
+                    className="btn primary" 
+                    onClick={() => {
+                      const success = onSubmitRound();
+                      if (success) {
+                        if (toast) toast.success('Round submitted! Ladder movement applied.');
+                      } else {
+                        if (toast) toast.error('Failed to submit round. Please try again.');
+                      }
+                    }}
+                    style={{ 
+                      padding: '14px 32px', 
+                      fontSize: '16px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    <Send size={18} style={{ marginRight: '8px' }} />
+                    Submit Round
+                  </button>
+                  <button 
+                    className="btn" 
+                    onClick={handleCloseEventDay}
+                    style={{ 
+                      padding: '12px 24px', 
+                      fontSize: '15px'
+                    }}
+                  >
+                    <CheckCircle2 size={18} style={{ marginRight: '8px' }} />
+                    Complete Event Day
+                  </button>
+                </div>
               </div>
             </section>
           )}
@@ -263,6 +302,20 @@ export default function EventDayManager({
                   <CheckCircle2 size={18} />
                   Close Event Day & Apply Movement
                 </button>
+                {canStartNextDay && onFinishAndContinue && (
+                  <button 
+                    className="btn primary" 
+                    onClick={handleFinishAndContinue}
+                    style={{ 
+                      padding: '14px 28px', 
+                      fontSize: '15px', 
+                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.9))'
+                    }}
+                  >
+                    <Play size={18} style={{ marginRight: '8px' }} />
+                    Finish & Start Next Event Day
+                  </button>
+                )}
               </div>
 
               {/* Ladder Movement Preview */}

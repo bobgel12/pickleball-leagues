@@ -631,6 +631,25 @@ function App() {
     }
   }, [leagueState, toast]);
 
+  const handleFinishAndContinue = useCallback(() => {
+    // Close current event day
+    const closed = eventDay.closeEventDay();
+    if (closed) {
+      // Start next event day
+      const newDay = leagueState.startEventDay();
+      if (newDay) {
+        toast.success(`Event Day ${newDay.dayNumber - 1} completed! Event Day ${newDay.dayNumber} started!`);
+        // Stay on eventDay view - it will show the new day
+        setLeagueView('eventDay');
+        return true;
+      } else {
+        toast.warning('Event day closed, but could not start next event day.');
+        return false;
+      }
+    }
+    return false;
+  }, [eventDay, leagueState, toast]);
+
   // Multiple leagues handlers
   const handleSwitchLeague = useCallback(async (leagueId) => {
     try {
@@ -820,6 +839,7 @@ function App() {
             toast={toast}
             isCurrentRoundComplete={eventDay.isCurrentRoundComplete}
             onSubmitRound={eventDay.submitRound}
+            onFinishAndContinue={handleFinishAndContinue}
           />
         );
       case 'standings':
