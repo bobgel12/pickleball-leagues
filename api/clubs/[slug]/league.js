@@ -192,19 +192,26 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
     console.log(`syncPlayersToDatabase: Completed for league ${leagueId} (league_data.id: ${leagueDataId}). Processed: ${processedCount}, Created: ${createdCount}, Updated: ${updatedCount}`);
 
     // Remove players that are no longer in the league
-    const playersToRemove = Array.from(currentPlayerIds).filter(id => !incomingPlayerIds.has(id));
-    if (playersToRemove.length > 0) {
-      await supabase
-        .from('league_players')
-        .delete()
-        .eq('league_id', leagueDataId)
-        .in('player_id', playersToRemove);
+    // BUT: Only remove if we actually have incoming players (don't remove all if incoming is empty)
+    // This prevents accidental deletion when sync is called with empty/missing data
+    if (incomingPlayerIds.size > 0) {
+      const playersToRemove = Array.from(currentPlayerIds).filter(id => !incomingPlayerIds.has(id));
+      if (playersToRemove.length > 0) {
+        console.log(`syncPlayersToDatabase: Removing ${playersToRemove.length} players that are no longer in the league`);
+        await supabase
+          .from('league_players')
+          .delete()
+          .eq('league_id', leagueDataId)
+          .in('player_id', playersToRemove);
 
-      await supabase
-        .from('player_stats')
-        .delete()
-        .eq('league_id', leagueDataId)
-        .in('player_id', playersToRemove);
+        await supabase
+          .from('player_stats')
+          .delete()
+          .eq('league_id', leagueDataId)
+          .in('player_id', playersToRemove);
+      }
+    } else {
+      console.log(`syncPlayersToDatabase: Skipping player removal - incoming players list is empty (preserving existing players)`);
     }
   } catch (error) {
     console.error('Error syncing players to database:', error);
@@ -764,9 +771,18 @@ export default async function handler(req, res) {
         // Merge incoming leagueData with existing JSONB data to preserve fields not being updated
         // This prevents losing registeredPlayers, eventDays, etc. if they're missing in the update
         const existingData = existingLeague.data || {};
+        
+        // Special handling for registeredPlayers: Don't overwrite with empty array
+        // If incoming registeredPlayers is empty but existing has data, preserve existing
+        const shouldPreservePlayers = 
+          Array.isArray(existingData.registeredPlayers) && existingData.registeredPlayers.length > 0 &&
+          Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length === 0;
+        
         const mergedLeagueData = {
           ...existingData, // Preserve existing JSONB data (registeredPlayers, eventDays, etc.)
-          ...leagueData    // Overwrite with incoming updates
+          ...leagueData,   // Overwrite with incoming updates
+          // Override registeredPlayers if we should preserve existing
+          ...(shouldPreservePlayers && { registeredPlayers: existingData.registeredPlayers })
         };
         
         // Log what's being saved to verify eventDays and registeredPlayers are included
