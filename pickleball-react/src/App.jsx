@@ -852,6 +852,7 @@ function App() {
             getPlayerBalance={leagueState.getPlayerBalance}
             onPlayerClick={(player) => setSelectedPlayer(player)}
             onNavigate={handleLeagueNavigate}
+            getPlayerById={leagueState.getPlayerById}
           />
         );
       case 'prizePool':

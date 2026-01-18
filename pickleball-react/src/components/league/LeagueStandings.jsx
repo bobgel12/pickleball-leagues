@@ -12,11 +12,13 @@ export default function LeagueStandings({
   winPercentageLeader,
   getPlayerBalance,
   onPlayerClick,
-  onNavigate
+  onNavigate,
+  getPlayerById
 }) {
   const [activeTab, setActiveTab] = useState('league'); // 'league' or 'money'
   const [sortBy, setSortBy] = useState('points');
   const [filterMinGames, setFilterMinGames] = useState(0);
+  const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   const isChampion = pointsLeader && winPercentageLeader && 
     pointsLeader.id === winPercentageLeader.id;
@@ -45,6 +47,68 @@ export default function LeagueStandings({
     if (sortBy === 'points') return player.rank;
     return index + 1;
   };
+
+  // Extract match history by player from all event days
+  const playerMatchHistory = useMemo(() => {
+    if (!league || !league.eventDays || !getPlayerById) return {};
+    
+    const historyByPlayer = {};
+    
+    // Iterate through all event days
+    league.eventDays.forEach(eventDay => {
+      if (!eventDay.schedule || eventDay.schedule.length === 0) return;
+      
+      // Get all completed matches
+      const completedMatches = eventDay.schedule.filter(m => m.status === 'completed');
+      
+      completedMatches.forEach(match => {
+        const allPlayers = [...(match.teamA || []), ...(match.teamB || [])];
+        
+        // For each player in the match, add it to their history
+        allPlayers.forEach(playerId => {
+          if (!historyByPlayer[playerId]) {
+            historyByPlayer[playerId] = [];
+          }
+          
+          // Determine if player was on team A or B
+          const playerTeam = match.teamA.includes(playerId) ? 'A' : 'B';
+          const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
+          const teammates = (playerTeam === 'A' ? match.teamA : match.teamB).filter(id => id !== playerId);
+          const opponents = playerTeam === 'A' ? match.teamB : match.teamA;
+          const won = match.winner === playerTeam;
+          
+          historyByPlayer[playerId].push({
+            eventDayId: eventDay.id,
+            dayNumber: eventDay.dayNumber,
+            matchId: match.id,
+            courtIndex: match.courtIndex || 0,
+            roundNumber: match.roundNumber || 1,
+            playerTeam,
+            teammates,
+            opponents,
+            scoreA: match.scoreA,
+            scoreB: match.scoreB,
+            winner: match.winner,
+            won,
+            // Show score from player's perspective
+            playerScore: playerTeam === 'A' ? match.scoreA : match.scoreB,
+            opponentScore: playerTeam === 'A' ? match.scoreB : match.scoreA
+          });
+        });
+      });
+    });
+    
+    // Sort matches by event day and round (most recent first)
+    Object.keys(historyByPlayer).forEach(playerId => {
+      historyByPlayer[playerId].sort((a, b) => {
+        if (a.dayNumber !== b.dayNumber) return b.dayNumber - a.dayNumber;
+        if (a.roundNumber !== b.roundNumber) return b.roundNumber - a.roundNumber;
+        return b.matchId - a.matchId;
+      });
+    });
+    
+    return historyByPlayer;
+  }, [league, getPlayerById]);
 
   // Money Round standings
   const moneyRoundStandings = useMemo(() => {
@@ -232,48 +296,125 @@ export default function LeagueStandings({
               const totalGames = player.totalWins + player.totalLosses;
               const pointDiff = player.pointsScored - player.pointsAllowed;
               const rank = getSortedRank(player, index);
+              const isExpanded = expandedPlayerId === player.id;
 
               return (
-                <tr 
-                  key={player.id}
-                  onClick={() => onPlayerClick && onPlayerClick(player)}
-                  style={{ cursor: onPlayerClick ? 'pointer' : 'default' }}
-                >
-                  <td className={`rank-cell ${rank <= 3 ? 'top-3' : ''}`}>
-                    {rank}
-                  </td>
-                  <td className="name-cell">
-                    {player.name}
-                    {pointsLeader && player.id === pointsLeader.id && (
-                      <span className="leader-badge points">
-                        <Trophy size={10} /> Pts
-                      </span>
-                    )}
-                    {winPercentageLeader && player.id === winPercentageLeader.id && totalGames >= 5 && (
-                      <span className="leader-badge winpct">
-                        <Award size={10} /> Win%
-                      </span>
-                    )}
-                  </td>
-                  <td className="mono" style={{ fontWeight: sortBy === 'points' ? 700 : 400 }}>
-                    {player.cumulativePoints}
-                  </td>
-                  <td className="mono">
-                    {player.totalWins}-{player.totalLosses}
-                  </td>
-                  <td className="mono" style={{ fontWeight: sortBy === 'winPct' ? 700 : 400 }}>
-                    {player.winPercentage}%
-                  </td>
-                  <td className="mono" style={{ color: pointDiff > 0 ? 'var(--success)' : pointDiff < 0 ? 'var(--danger)' : 'inherit' }}>
-                    {pointDiff > 0 ? '+' : ''}{pointDiff}
-                  </td>
-                  <td className="mono">
-                    {player.eventDaysAttended}
-                  </td>
-                  <td className="mono">
-                    {player.duprRating.toFixed(3)}
-                  </td>
-                </tr>
+                <React.Fragment key={player.id}>
+                  <tr 
+                    onClick={() => {
+                      setExpandedPlayerId(expandedPlayerId === player.id ? null : player.id);
+                      onPlayerClick && onPlayerClick(player);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td className={`rank-cell ${rank <= 3 ? 'top-3' : ''}`}>
+                      {rank}
+                    </td>
+                    <td className="name-cell">
+                      {player.name}
+                      {pointsLeader && player.id === pointsLeader.id && (
+                        <span className="leader-badge points">
+                          <Trophy size={10} /> Pts
+                        </span>
+                      )}
+                      {winPercentageLeader && player.id === winPercentageLeader.id && totalGames >= 5 && (
+                        <span className="leader-badge winpct">
+                          <Award size={10} /> Win%
+                        </span>
+                      )}
+                    </td>
+                    <td className="mono" style={{ fontWeight: sortBy === 'points' ? 700 : 400 }}>
+                      {player.cumulativePoints}
+                    </td>
+                    <td className="mono">
+                      {player.totalWins}-{player.totalLosses}
+                    </td>
+                    <td className="mono" style={{ fontWeight: sortBy === 'winPct' ? 700 : 400 }}>
+                      {player.winPercentage}%
+                    </td>
+                    <td className="mono" style={{ color: pointDiff > 0 ? 'var(--success)' : pointDiff < 0 ? 'var(--danger)' : 'inherit' }}>
+                      {pointDiff > 0 ? '+' : ''}{pointDiff}
+                    </td>
+                    <td className="mono">
+                      {player.eventDaysAttended}
+                    </td>
+                    <td className="mono">
+                      {player.duprRating.toFixed(3)}
+                    </td>
+                  </tr>
+                  {isExpanded && (() => {
+                    const matches = playerMatchHistory[player.id] || [];
+                    
+                    if (matches.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)' }}>
+                            No match history available
+                          </td>
+                        </tr>
+                      );
+                    }
+                    
+                    return (
+                      <tr>
+                        <td colSpan={8} style={{ padding: 0, backgroundColor: 'var(--bg-secondary)' }}>
+                          <div style={{ padding: '16px' }}>
+                            <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>Match History</h4>
+                            <table style={{ width: '100%', fontSize: '12px' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <th style={{ padding: '8px', textAlign: 'left' }}>Event Day</th>
+                                  <th style={{ padding: '8px', textAlign: 'left' }}>Round</th>
+                                  <th style={{ padding: '8px', textAlign: 'left' }}>Court</th>
+                                  <th style={{ padding: '8px', textAlign: 'left' }}>Teammate(s)</th>
+                                  <th style={{ padding: '8px', textAlign: 'left' }}>Opponents</th>
+                                  <th style={{ padding: '8px', textAlign: 'center' }}>Score</th>
+                                  <th style={{ padding: '8px', textAlign: 'center' }}>Result</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {matches.map((match, idx) => {
+                                  const teammateNames = match.teammates
+                                    .map(id => getPlayerById && getPlayerById(id))
+                                    .filter(Boolean)
+                                    .map(p => p.name)
+                                    .join(', ') || 'None';
+                                  
+                                  const opponentNames = match.opponents
+                                    .map(id => getPlayerById && getPlayerById(id))
+                                    .filter(Boolean)
+                                    .map(p => p.name)
+                                    .join(', ');
+                                  
+                                  return (
+                                    <tr key={`${match.eventDayId}-${match.matchId}-${idx}`}>
+                                      <td style={{ padding: '8px' }}>Day {match.dayNumber}</td>
+                                      <td style={{ padding: '8px' }}>Round {match.roundNumber}</td>
+                                      <td style={{ padding: '8px' }}>Court {match.courtIndex + 1}</td>
+                                      <td style={{ padding: '8px' }}>{teammateNames}</td>
+                                      <td style={{ padding: '8px' }}>{opponentNames}</td>
+                                      <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace' }}>
+                                        {match.playerScore}-{match.opponentScore}
+                                      </td>
+                                      <td style={{ 
+                                        padding: '8px', 
+                                        textAlign: 'center',
+                                        color: match.won ? 'var(--success)' : 'var(--danger)',
+                                        fontWeight: '600'
+                                      }}>
+                                        {match.won ? 'W' : 'L'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })()}
+                </React.Fragment>
               );
             })}
           </tbody>
