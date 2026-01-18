@@ -283,19 +283,27 @@ export function normalizeLeagueState(league) {
   };
 
   // Ensure registeredPlayers have all required fields
-  normalized.registeredPlayers = (normalized.registeredPlayers || []).map(player => ({
-    ...createLeaguePlayer(player.id, player.name, player.duprRating, player.gender),
-    ...player,
-    // Ensure moneyRoundStats exists
-    moneyRoundStats: {
-      totalWins: 0,
-      totalLosses: 0,
-      totalContributions: 0,
-      totalPaid: 0,
-      contributionHistory: [],
-      ...(player.moneyRoundStats || {})
-    }
-  }));
+  normalized.registeredPlayers = (normalized.registeredPlayers || []).map(player => {
+    const defaultPlayer = createLeaguePlayer(player.id, player.name, player.duprRating, player.gender);
+    return {
+      ...defaultPlayer,
+      ...player, // This preserves all stats from database
+      // Explicitly ensure stats fields exist (don't override if already set)
+      cumulativePoints: player.cumulativePoints ?? defaultPlayer.cumulativePoints,
+      totalWins: player.totalWins ?? defaultPlayer.totalWins,
+      totalLosses: player.totalLosses ?? defaultPlayer.totalLosses,
+      pointsScored: player.pointsScored ?? defaultPlayer.pointsScored,
+      pointsAllowed: player.pointsAllowed ?? defaultPlayer.pointsAllowed,
+      eventDaysAttended: player.eventDaysAttended ?? defaultPlayer.eventDaysAttended,
+      courtHistory: player.courtHistory ?? defaultPlayer.courtHistory,
+      ladderPositionHistory: player.ladderPositionHistory ?? defaultPlayer.ladderPositionHistory,
+      // Ensure moneyRoundStats exists
+      moneyRoundStats: {
+        ...defaultPlayer.moneyRoundStats,
+        ...(player.moneyRoundStats || {})
+      }
+    };
+  });
 
   // Ensure leagueMode exists (default to regular for backward compatibility)
   if (!normalized.leagueMode) {

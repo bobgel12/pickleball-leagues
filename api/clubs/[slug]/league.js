@@ -29,12 +29,14 @@ async function getClubId(supabase, slug) {
  * Sync players from leagueData to normalized tables
  */
 async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, registeredPlayers) {
+  console.log(`syncPlayersToDatabase: Called with leagueDataId=${leagueDataId}, leagueId=${leagueId}, clubId=${clubId}, playerCount=${registeredPlayers?.length || 0}`);
+  
   if (!registeredPlayers || !Array.isArray(registeredPlayers)) {
     console.log('syncPlayersToDatabase: No registeredPlayers array provided');
     return;
   }
 
-  console.log(`syncPlayersToDatabase: Starting sync for league ${leagueId}, ${registeredPlayers.length} players`);
+  console.log(`syncPlayersToDatabase: Starting sync for league ${leagueId} (league_data.id: ${leagueDataId}), ${registeredPlayers.length} players`);
 
   try {
     // Get current players for this league
@@ -187,7 +189,7 @@ async function syncPlayersToDatabase(supabase, leagueDataId, leagueId, clubId, r
       }
     }
     
-    console.log(`syncPlayersToDatabase: Completed. Processed: ${processedCount}, Created: ${createdCount}, Updated: ${updatedCount}`);
+    console.log(`syncPlayersToDatabase: Completed for league ${leagueId} (league_data.id: ${leagueDataId}). Processed: ${processedCount}, Created: ${createdCount}, Updated: ${updatedCount}`);
 
     // Remove players that are no longer in the league
     const playersToRemove = Array.from(currentPlayerIds).filter(id => !incomingPlayerIds.has(id));
@@ -303,6 +305,7 @@ export default async function handler(req, res) {
         }
 
         // Load players from normalized tables
+        console.log(`GET: Loading players for league ${leagueRecord.league_id}, using league_data.id: ${leagueRecord.id}`);
         const { data: leaguePlayers, error: playersError } = await supabase
           .from('league_players')
           .select(`
@@ -318,12 +321,20 @@ export default async function handler(req, res) {
           `)
           .eq('league_id', leagueRecord.id);
 
+        console.log(`GET: league_players query result:`, {
+          count: leaguePlayers?.length || 0,
+          hasError: !!playersError,
+          error: playersError?.message,
+          sampleData: leaguePlayers?.[0]
+        });
+
         if (playersError) {
-          console.error('Error loading league players:', playersError);
+          console.error('GET: Error loading league players:', playersError);
         }
 
         // Load player stats separately (more reliable than foreign key relationship)
         const playerIds = (leaguePlayers || []).map(lp => lp.player_id).filter(Boolean);
+        console.log(`GET: Extracted ${playerIds.length} player IDs from league_players`);
         let playerStatsMap = new Map();
         
         if (playerIds.length > 0) {
@@ -334,12 +345,15 @@ export default async function handler(req, res) {
             .in('player_id', playerIds);
 
           if (statsError) {
-            console.error('Error loading player stats:', statsError);
+            console.error('GET: Error loading player stats:', statsError);
           } else {
+            console.log(`GET: Loaded ${allStats?.length || 0} stats records from player_stats table`);
             (allStats || []).forEach(stat => {
               playerStatsMap.set(stat.player_id, stat);
             });
           }
+        } else {
+          console.log(`GET: No player IDs found, skipping stats query`);
         }
 
         // If player relationship didn't work, load players directly
@@ -404,11 +418,107 @@ export default async function handler(req, res) {
         // Merge players into league data (for backward compatibility)
         const leagueData = leagueRecord.data || {};
         
-        // If no players loaded from normalized tables, try to use players from JSONB column as fallback
+        // AUTO-SYNC: If normalized tables are empty but JSONB has players, sync them
         let finalRegisteredPlayers = registeredPlayers;
         if (registeredPlayers.length === 0 && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length > 0) {
-          console.warn(`No players found in normalized tables for league ${leagueRecord.league_id}, using fallback from JSONB column`);
-          finalRegisteredPlayers = leagueData.registeredPlayers;
+          console.log(`GET: Auto-sync triggered - normalized tables empty but JSONB has ${leagueData.registeredPlayers.length} players for league ${leagueRecord.league_id}`);
+          console.log(`GET: Syncing players from JSONB to normalized tables using league_data.id: ${leagueRecord.id}`);
+          
+          try {
+            // Sync players from JSONB to normalized tables
+            await syncPlayersToDatabase(supabase, leagueRecord.id, leagueRecord.league_id, clubId, leagueData.registeredPlayers);
+            console.log(`GET: Auto-sync completed for league ${leagueRecord.league_id}`);
+            
+            // Reload players from normalized tables after sync
+            const { data: syncedLeaguePlayers, error: syncedError } = await supabase
+              .from('league_players')
+              .select(`
+                registered_at,
+                player_id,
+                player:player_id (
+                  id,
+                  name,
+                  dupr_rating,
+                  gender,
+                  created_at
+                )
+              `)
+              .eq('league_id', leagueRecord.id);
+            
+            if (!syncedError && syncedLeaguePlayers && syncedLeaguePlayers.length > 0) {
+              // Reload stats for synced players
+              const syncedPlayerIds = syncedLeaguePlayers.map(lp => lp.player_id).filter(Boolean);
+              let syncedPlayerStatsMap = new Map();
+              
+              if (syncedPlayerIds.length > 0) {
+                const { data: syncedStats } = await supabase
+                  .from('player_stats')
+                  .select('*')
+                  .eq('league_id', leagueRecord.id)
+                  .in('player_id', syncedPlayerIds);
+                
+                (syncedStats || []).forEach(stat => {
+                  syncedPlayerStatsMap.set(stat.player_id, stat);
+                });
+              }
+              
+              // Load players directly as fallback
+              let syncedPlayersMap = new Map();
+              if (syncedPlayerIds.length > 0) {
+                const { data: directSyncedPlayers } = await supabase
+                  .from('players')
+                  .select('id, name, dupr_rating, gender, created_at')
+                  .in('id', syncedPlayerIds);
+                
+                (directSyncedPlayers || []).forEach(p => {
+                  syncedPlayersMap.set(p.id, p);
+                });
+              }
+              
+              // Build registeredPlayers from synced data
+              finalRegisteredPlayers = syncedLeaguePlayers.map(lp => {
+                const player = lp.player || syncedPlayersMap.get(lp.player_id);
+                const stats = syncedPlayerStatsMap.get(lp.player_id) || null;
+                
+                if (!player) {
+                  return null;
+                }
+                
+                return {
+                  id: player.id || null,
+                  name: player.name || '',
+                  duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+                  gender: player.gender || null,
+                  registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
+                  cumulativePoints: stats?.cumulative_points || 0,
+                  totalWins: stats?.total_wins || 0,
+                  totalLosses: stats?.total_losses || 0,
+                  pointsScored: stats?.points_scored || 0,
+                  pointsAllowed: stats?.points_allowed || 0,
+                  eventDaysAttended: stats?.event_days_attended || 0,
+                  courtHistory: stats?.court_history || [],
+                  ladderPositionHistory: stats?.ladder_position_history || [],
+                  moneyRoundStats: stats?.money_round_stats || {
+                    totalWins: 0,
+                    totalLosses: 0,
+                    totalContributions: 0,
+                    totalPaid: 0,
+                    contributionHistory: []
+                  }
+                };
+              }).filter(Boolean);
+              
+              console.log(`GET: Reloaded ${finalRegisteredPlayers.length} players from normalized tables after sync`);
+            } else {
+              // If sync didn't populate normalized tables, fall back to JSONB
+              console.warn(`GET: Auto-sync didn't populate normalized tables, using JSONB fallback`);
+              finalRegisteredPlayers = leagueData.registeredPlayers;
+            }
+          } catch (syncErr) {
+            console.error(`GET: Error during auto-sync for league ${leagueRecord.league_id}:`, syncErr);
+            // Fall back to JSONB on error
+            finalRegisteredPlayers = leagueData.registeredPlayers;
+          }
         }
         
         const mergedLeagueData = {
@@ -534,11 +644,20 @@ export default async function handler(req, res) {
 
       // Sync players to normalized tables if registeredPlayers exists in leagueData
       if (leagueData && leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
-        console.log(`POST: Syncing ${leagueData.registeredPlayers.length} players for new league ${data.league_id}`);
+        console.log(`POST: Syncing ${leagueData.registeredPlayers.length} players for new league ${data.league_id} (league_data.id: ${data.id})`);
         try {
           await syncPlayersToDatabase(supabase, data.id, data.league_id, clubId, leagueData.registeredPlayers);
+          console.log(`POST: Successfully synced players for league ${data.league_id}`);
         } catch (syncError) {
-          console.error('Error syncing players during league creation:', syncError);
+          console.error('POST: Error syncing players during league creation:', syncError);
+          console.error('POST: Sync error details:', {
+            leagueDataId: data.id,
+            leagueId: data.league_id,
+            clubId,
+            playerCount: leagueData.registeredPlayers.length,
+            errorMessage: syncError.message,
+            errorStack: syncError.stack
+          });
           // Don't fail league creation if player sync fails, but log the error
         }
       } else {
@@ -635,11 +754,20 @@ export default async function handler(req, res) {
         
         // Sync players to normalized tables if registeredPlayers exists in leagueData
         if (leagueData.registeredPlayers && Array.isArray(leagueData.registeredPlayers)) {
-          console.log(`PUT: Syncing ${leagueData.registeredPlayers.length} players for league ${existingLeague.league_id}`);
+          console.log(`PUT: Syncing ${leagueData.registeredPlayers.length} players for league ${existingLeague.league_id} (league_data.id: ${existingLeague.id})`);
           try {
             await syncPlayersToDatabase(supabase, existingLeague.id, existingLeague.league_id, clubId, leagueData.registeredPlayers);
+            console.log(`PUT: Successfully synced players for league ${existingLeague.league_id}`);
           } catch (syncError) {
-            console.error('Error syncing players during league update:', syncError);
+            console.error('PUT: Error syncing players during league update:', syncError);
+            console.error('PUT: Sync error details:', {
+              leagueDataId: existingLeague.id,
+              leagueId: existingLeague.league_id,
+              clubId,
+              playerCount: leagueData.registeredPlayers.length,
+              errorMessage: syncError.message,
+              errorStack: syncError.stack
+            });
             // Don't fail league update if player sync fails, but log the error
           }
         } else {
