@@ -366,14 +366,22 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     const playerNewCourt = {};
     currentCourtAssignments.forEach((court, courtIndex) => {
       court.forEach(playerId => {
-        playerNewCourt[playerId] = courtIndex;
+        // Normalize playerId to number for consistent key lookup
+        const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
+        if (!isNaN(normalizedId)) {
+          playerNewCourt[normalizedId] = courtIndex;
+        }
       });
     });
     
     // Apply movements using nextCourt
     movements.forEach(move => {
       if (move.nextCourt !== undefined) {
-        playerNewCourt[move.playerId] = move.nextCourt;
+        // Normalize playerId to number for consistent key lookup
+        const normalizedId = typeof move.playerId === 'string' ? parseInt(move.playerId, 10) : move.playerId;
+        if (!isNaN(normalizedId)) {
+          playerNewCourt[normalizedId] = move.nextCourt;
+        }
       }
     });
     

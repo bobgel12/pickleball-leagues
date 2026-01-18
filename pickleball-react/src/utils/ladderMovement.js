@@ -436,27 +436,43 @@ export function assignCourtsByRandom(checkedInPlayerIds) {
  * @returns {Array} Consolidated court assignments
  */
 export function consolidateCourtsToHighest(courtAssignments) {
-  // Collect all players from all courts
-  const allPlayers = courtAssignments.flat();
-  const totalPlayers = allPlayers.length;
+  // Collect all players from all courts, preserving their court assignments
+  // This preserves the movement hierarchy: players on higher courts stay on higher courts
+  const playersByCourt = courtAssignments.map((court, courtIndex) => ({
+    courtIndex,
+    players: court.map(id => {
+      const normalizedId = typeof id === 'string' ? parseInt(id, 10) : id;
+      return isNaN(normalizedId) ? null : normalizedId;
+    }).filter(Boolean)
+  }));
+  
+  const totalPlayers = playersByCourt.reduce((sum, court) => sum + court.players.length, 0);
   
   // Only consolidate if less than 16 players
   if (totalPlayers >= 16) {
     return courtAssignments;
   }
   
-  // Redistribute to highest courts (Court 4 = index 3, Court 3 = index 2, etc.)
+  // Consolidate while preserving court hierarchy
+  // Players from higher courts (Court 4 = index 3) should go to highest consolidated courts
+  // Players from lower courts (Court 1 = index 0) should go to lower consolidated courts
+  // This preserves ladder movement: winners who moved up stay on higher courts
   const consolidated = [[], [], [], []];
   const playersPerCourt = 4;
   
-  allPlayers.forEach((playerId, index) => {
-    // Ensure playerId is a number
-    const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
-    if (!isNaN(normalizedId)) {
-      const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
-      if (courtIndex >= 0) {
-        consolidated[courtIndex].push(normalizedId);
-      }
+  // Sort courts by index (highest first: Court 4, Court 3, Court 2, Court 1)
+  // This ensures players who moved to higher courts are redistributed first
+  const sortedCourts = [...playersByCourt].sort((a, b) => b.courtIndex - a.courtIndex);
+  
+  // Collect all players in order: highest court players first, then lower courts
+  // This preserves the movement hierarchy after consolidation
+  const allPlayersOrdered = sortedCourts.flatMap(court => court.players);
+  
+  // Redistribute to highest courts, preserving relative hierarchy
+  allPlayersOrdered.forEach((playerId, index) => {
+    const courtIndex = 3 - Math.floor(index / playersPerCourt); // Start from Court 4 (index 3)
+    if (courtIndex >= 0) {
+      consolidated[courtIndex].push(playerId);
     }
   });
   
