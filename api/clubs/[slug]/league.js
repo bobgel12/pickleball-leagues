@@ -662,10 +662,10 @@ export default async function handler(req, res) {
         });
       }
       
-      // Otherwise, return list of all leagues (metadata only)
+      // Otherwise, return list of all leagues (metadata only; include data for schedule/format)
       const { data, error } = await supabase
         .from('league_data')
-        .select('id, league_id, league_name, status, description, created_at, updated_at')
+        .select('id, league_id, league_name, status, description, data, created_at, updated_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false });
 
@@ -687,7 +687,7 @@ export default async function handler(req, res) {
         playerCountMap.set(pc.league_id, (playerCountMap.get(pc.league_id) || 0) + 1);
       });
 
-      // Extract basic stats from data for each league
+      // Extract basic stats from data for each league (do not expose full data in list)
       const leagues = (data || []).map(league => {
         const leagueData = league.data || {};
         const eventDays = leagueData.eventDays || [];
@@ -699,6 +699,8 @@ export default async function handler(req, res) {
           leagueName: league.league_name,
           status: league.status,
           description: league.description,
+          schedule: leagueData.schedule ?? null,
+          format: leagueData.format ?? null,
           playerCount: playerCount,
           eventDaysCount: eventDays.length,
           createdAt: league.created_at,

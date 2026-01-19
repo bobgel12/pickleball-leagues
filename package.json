@@ -5,7 +5,8 @@
   "scripts": {
     "build": "cd pickleball-react && npm ci && npm run build && cd .. && cp pickleball-react/dist/index.html index.html",
     "dev": "vercel dev",
-    "dev:vite": "cd pickleball-react && npm run dev"
+    "dev:vite": "cd pickleball-react && npm run dev",
+    "seed-leagues": "node scripts/seed-leagues.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

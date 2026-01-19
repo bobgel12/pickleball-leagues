@@ -385,6 +385,10 @@ export function normalizeLeagueState(league) {
     };
   }
 
+  // Preserve optional schedule and format from league data (for display on cards, etc.)
+  if (league.schedule != null) normalized.schedule = league.schedule;
+  if (league.format != null) normalized.format = league.format;
+
   return normalized;
 }
 

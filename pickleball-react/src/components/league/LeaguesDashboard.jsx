@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Edit2, Calendar, Users, 
-  Trophy, Settings, AlertCircle, Loader
+  Trophy, AlertCircle, Loader, Clock
 } from 'lucide-react';
+import { formatSchedule } from '../../utils/constants.js';
+import { LEAGUE_TEMPLATES, getLeagueTemplate, getFormatLabel } from '../../data/leagueTemplates.js';
 
 export default function LeaguesDashboard({
   leagues = [],
@@ -20,6 +22,7 @@ export default function LeaguesDashboard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [newLeagueName, setNewLeagueName] = useState('');
   const [newLeagueDescription, setNewLeagueDescription] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -44,9 +47,11 @@ export default function LeaguesDashboard({
 
     setIsCreating(true);
     try {
-      await onCreateLeague(newLeagueName.trim(), newLeagueDescription.trim() || null);
+      const template = selectedTemplateId ? getLeagueTemplate(selectedTemplateId) : null;
+      await onCreateLeague(newLeagueName.trim(), newLeagueDescription.trim() || null, template);
       setNewLeagueName('');
       setNewLeagueDescription('');
+      setSelectedTemplateId('');
       setShowCreateModal(false);
       if (toast) toast.success('League created successfully');
       if (onLoadLeagues) {
@@ -171,7 +176,20 @@ export default function LeaguesDashboard({
                       <h3 style={{ margin: 0, marginBottom: '8px', fontSize: '18px' }}>
                         {league.leagueName}
                       </h3>
-                      {getStatusBadge(league.status)}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                        {getStatusBadge(league.status)}
+                        {league.format && (
+                          <span style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: 'var(--surface)',
+                            color: 'var(--text-secondary)'
+                          }}>
+                            {getFormatLabel(league.format)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {isCurrentLeague && (
                       <span style={{ 
@@ -183,6 +201,13 @@ export default function LeaguesDashboard({
                       </span>
                     )}
                   </div>
+
+                  {league.schedule && formatSchedule(league.schedule) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      <Clock size={14} />
+                      <span>{formatSchedule(league.schedule)}</span>
+                    </div>
+                  )}
 
                   {league.description && (
                     <p style={{ 
@@ -286,6 +311,44 @@ export default function LeaguesDashboard({
             
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>
+                Template (optional)
+              </label>
+              <select
+                className="input"
+                value={selectedTemplateId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedTemplateId(id);
+                  if (id) {
+                    const t = getLeagueTemplate(id);
+                    if (t) {
+                      setNewLeagueName(t.name);
+                      setNewLeagueDescription(t.description || '');
+                    }
+                  }
+                }}
+                disabled={isCreating}
+                style={{ width: '100%' }}
+              >
+                <option value="">None</option>
+                {LEAGUE_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              {selectedTemplateId && (() => {
+                const t = getLeagueTemplate(selectedTemplateId);
+                if (!t) return null;
+                return (
+                  <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    {t.schedule && formatSchedule(t.schedule) && <div>Schedule: {formatSchedule(t.schedule)}</div>}
+                    {t.format && <div>Format: {getFormatLabel(t.format)}</div>}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>
                 League Name *
               </label>
               <input
@@ -321,6 +384,7 @@ export default function LeaguesDashboard({
                   setShowCreateModal(false);
                   setNewLeagueName('');
                   setNewLeagueDescription('');
+                  setSelectedTemplateId('');
                 }}
                 disabled={isCreating}
               >

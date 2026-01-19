@@ -1046,18 +1046,27 @@ export function useLeagueState() {
   }, [loadAllLeaguesForClub]);
 
   // Create a new league
-  const createNewLeague = useCallback(async (leagueName, description = null) => {
+  const createNewLeague = useCallback(async (leagueName, description = null, template = null) => {
     if (!leagueName || typeof leagueName !== 'string' || leagueName.trim() === '') {
       throw new Error('League name is required');
     }
 
     try {
-      // Create default league data
-      const defaultLeagueData = createDefaultLeague({
+      const overrides = {
         clubId: club?.id || league.clubId,
         leagueName: leagueName.trim(),
-        description: description || null
-      });
+        description: description || null,
+        name: leagueName.trim(),
+      };
+      if (template) {
+        if (template.schedule) overrides.schedule = template.schedule;
+        if (template.format) overrides.format = template.format;
+        if (template.leagueMode) overrides.leagueMode = template.leagueMode;
+        if (template.moneyRoundEnabled !== undefined) overrides.moneyRoundEnabled = template.moneyRoundEnabled;
+        if (template.totalEventDays !== undefined) overrides.totalEventDays = template.totalEventDays;
+        if (template.maxPlayersPerDay !== undefined) overrides.maxPlayersPerDay = template.maxPlayersPerDay;
+      }
+      const defaultLeagueData = createDefaultLeague(overrides);
 
       // Create league in database
       const newLeague = await createLeagueApi(leagueName.trim(), description, defaultLeagueData);

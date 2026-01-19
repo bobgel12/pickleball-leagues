@@ -664,9 +664,9 @@ function App() {
     }
   }, [leagueState, toast]);
 
-  const handleCreateLeague = useCallback(async (leagueName, description) => {
+  const handleCreateLeague = useCallback(async (leagueName, description, template = null) => {
     try {
-      await leagueState.createNewLeague(leagueName, description);
+      await leagueState.createNewLeague(leagueName, description, template);
       setLeagueView('dashboard'); // Switch to dashboard view after creating
     } catch (error) {
       console.error('Error creating league:', error);

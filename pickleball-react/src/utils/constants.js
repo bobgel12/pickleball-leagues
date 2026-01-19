@@ -68,3 +68,12 @@ export const GENDER = {
   MALE: 'male',
   FEMALE: 'female'
 };
+
+// Schedule display (dayOfWeek 0=Sun .. 6=Sat; start/end "HH:mm")
+export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function formatSchedule(schedule) {
+  if (!schedule || typeof schedule.dayOfWeek !== 'number' || !schedule.start || !schedule.end) return '';
+  const day = DAY_NAMES[schedule.dayOfWeek] || '';
+  return day ? `${day} ${schedule.start}–${schedule.end}` : '';
+}
