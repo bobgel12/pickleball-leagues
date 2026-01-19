@@ -66,38 +66,39 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       console.error('closeCheckInAndGenerateCourts: No current event day');
       return false;
     }
-    if (currentEventDay.checkedInPlayers.length < 4) {
-      console.error('closeCheckInAndGenerateCourts: Need at least 4 players', currentEventDay.checkedInPlayers.length);
+
+    // Use only resolvable players (matches what the UI shows via checkedInPlayersDetails).
+    // This avoids failing when checkedInPlayers contains orphan/stale IDs that don't resolve.
+    const effectiveCheckedIn = (currentEventDay.checkedInPlayers || [])
+      .filter(id => getPlayerById(id));
+
+    if (effectiveCheckedIn.length < 4) {
+      console.error('closeCheckInAndGenerateCourts: Need at least 4 players', effectiveCheckedIn.length);
       return false;
     }
 
-    // For regular ladder league, validate multiple of 4
+    // For regular ladder league, validate multiple of 4 (use effective count)
     if (league.leagueMode === 'regular') {
-      if (currentEventDay.checkedInPlayers.length % 4 !== 0) {
-        // Return false and let the caller show error message
-        console.error('closeCheckInAndGenerateCourts: Regular league requires multiple of 4', currentEventDay.checkedInPlayers.length);
+      if (effectiveCheckedIn.length % 4 !== 0) {
+        console.error('closeCheckInAndGenerateCourts: Regular league requires multiple of 4', effectiveCheckedIn.length);
         return false;
       }
     }
 
-    // Determine court assignments based on league mode
+    // Determine court assignments based on league mode (use effective list)
     let courtAssignments;
     try {
       if (league.leagueMode === 'regular') {
-        // Regular ladder league: always use random seeding
-        courtAssignments = assignCourtsByRandom(currentEventDay.checkedInPlayers);
+        courtAssignments = assignCourtsByRandom(effectiveCheckedIn);
       } else {
-        // Mixed doubles: use DUPR/points-based seeding
         if (currentEventDay.dayNumber === 1) {
-          // Day 1: Assign by DUPR
           courtAssignments = assignCourtsByDupr(
-            currentEventDay.checkedInPlayers,
+            effectiveCheckedIn,
             league.registeredPlayers
           );
         } else {
-          // Day 2+: Assign by cumulative points
           courtAssignments = assignCourtsByPoints(
-            currentEventDay.checkedInPlayers,
+            effectiveCheckedIn,
             league.registeredPlayers
           );
         }
@@ -109,12 +110,10 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         return false;
       }
 
-      // Check if at least one court has players
       const totalPlayers = courtAssignments.flat().length;
       if (totalPlayers === 0) {
         console.error('closeCheckInAndGenerateCourts: No players in court assignments', {
-          checkedInPlayers: currentEventDay.checkedInPlayers,
-          registeredPlayersCount: league.registeredPlayers.length,
+          effectiveCheckedIn,
           courtAssignments
         });
         return false;
@@ -124,14 +123,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       return false;
     }
 
-    // Generate round-robin schedule for all courts
-    // For regular league, generate only Round 1 initially
-    // For mixed doubles, pass partners and getPlayerGender function
     const getPlayerGender = (playerId) => {
       const player = league.registeredPlayers.find(p => p.id === playerId);
       return player?.gender || null;
     };
-    
+
     const schedule = generateEventDaySchedule(courtAssignments, {
       leagueMode: league.leagueMode || 'regular',
       partners: league.partners || {},
@@ -139,18 +135,19 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       partnerMatchups: league.partnerMatchups || []
     });
 
+    // Persist cleaned checkedInPlayers so it stays in sync with effective list
     updateEventDay(currentEventDay.id, {
       status: EVENT_DAY_STATUS.ACTIVE,
       phase: EVENT_DAY_PHASE.LEAGUE_ROUND,
+      checkedInPlayers: effectiveCheckedIn,
       courtAssignments,
       schedule,
-      currentActiveRound: 1, // Start with Round 1
-      // Money Round will be enabled if league has it enabled or if explicitly enabled for this day
+      currentActiveRound: 1,
       moneyRoundEnabled: enableMoneyRound || league.moneyRoundEnabled
     });
 
     return true;
-  }, [currentEventDay, league.registeredPlayers, league.leagueMode, league.moneyRoundEnabled, updateEventDay]);
+  }, [currentEventDay, league.registeredPlayers, league.leagueMode, league.moneyRoundEnabled, updateEventDay, getPlayerById]);
 
   // Check if a specific round is complete (for mixed doubles and regular league)
   const checkRoundCompletion = useCallback((roundNumber) => {
