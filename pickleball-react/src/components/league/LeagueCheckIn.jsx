@@ -21,6 +21,9 @@ export default function LeagueCheckIn({
   const isMultipleOf4 = checkedInCount % 4 === 0;
   const canCloseCheckIn = checkedInCount >= 4 && (!isRegularLeague || isMultipleOf4);
 
+  const findPlayer = (playerId) =>
+    (league.registeredPlayers || []).find(p => p != null && p.id != null && String(p.id) === String(playerId));
+
   const handleCheckIn = (playerId) => {
     if (!canCheckIn) {
       if (toast) toast.warning(`Maximum ${maxPlayers} players already checked in`);
@@ -28,7 +31,7 @@ export default function LeagueCheckIn({
     }
     const success = onCheckIn(playerId);
     if (success && toast) {
-      const player = league.registeredPlayers.find(p => p.id === playerId);
+      const player = findPlayer(playerId);
       toast.success(`${player?.name || 'Player'} checked in`);
     }
   };
@@ -36,7 +39,7 @@ export default function LeagueCheckIn({
   const handleRemoveCheckIn = (playerId) => {
     const success = onRemoveCheckIn(playerId);
     if (success && toast) {
-      const player = league.registeredPlayers.find(p => p.id === playerId);
+      const player = findPlayer(playerId) || checkedInPlayersDetails.find(p => String(p.id) === String(playerId));
       toast.info(`${player?.name || 'Player'} removed from check-in`);
     }
   };
@@ -68,8 +71,16 @@ export default function LeagueCheckIn({
     }
   };
 
+  const totalRegistered = league.registeredPlayers?.length ?? 0;
+
   return (
     <div className="checkin-container">
+      <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+        Total registered: {totalRegistered} — Available: {availableForCheckIn.length} · Checked in: {checkedInCount}
+        {totalRegistered > 0 && availableForCheckIn.length + checkedInCount !== totalRegistered && (
+          <span style={{ color: 'var(--warning)', marginLeft: '8px' }}> (counts may not match)</span>
+        )}
+      </div>
       {/* Available Players */}
       <div className="checkin-column">
         <h3>
