@@ -331,19 +331,22 @@ export function useLeagueState() {
     }));
   }, []);
 
-  // Get player by ID
+  // Get player by ID (supports both UUID and numeric IDs for DB vs legacy leagues)
   const getPlayerById = useCallback((playerId) => {
-    // Normalize ID to number for consistent lookup
-    const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
-    if (isNaN(normalizedId)) {
-      console.warn('getPlayerById: Invalid ID provided:', playerId);
-      return null;
+    if (playerId == null) return null;
+    const str = String(playerId);
+    // UUID-style: contains hyphen; use string comparison
+    if (str.includes('-')) {
+      return league.registeredPlayers.find(p => p != null && p.id != null && String(p.id) === str) || null;
     }
+    // Numeric: parseInt for consistent lookup
+    const num = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
+    if (isNaN(num)) return null;
     return league.registeredPlayers.find(p => {
-      // Normalize player ID for comparison
-      const playerIdNum = typeof p.id === 'string' ? parseInt(p.id, 10) : p.id;
-      return playerIdNum === normalizedId;
-    });
+      if (p == null || p.id == null) return false;
+      const pn = typeof p.id === 'string' && !String(p.id).includes('-') ? parseInt(p.id, 10) : p.id;
+      return pn === num;
+    }) || null;
   }, [league.registeredPlayers]);
 
   // Start a new event day
