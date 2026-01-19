@@ -52,11 +52,11 @@ export default function LeagueStandings({
   const playerMatchHistory = useMemo(() => {
     if (!league || !league.eventDays || !getPlayerById) return {};
     
+    const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
     const historyByPlayer = {};
     
-    // Build mapping from numeric IDs to UUIDs
-    // Matches may use numeric IDs (1, 2, 3...) but players now have UUIDs
-    // Map by matching numeric IDs in courtAssignments with UUIDs based on court positions and stats
+    // Build mapping from numeric IDs to UUIDs (for legacy matches with numeric IDs when players have UUIDs)
+    // Per-court, per-day: get 4 players with matching courtHistory, sort by id; map court[position] -> sortedPlayers[position]
     const numericIdToPlayerIdMap = new Map();
     if (league.registeredPlayers && league.registeredPlayers.length > 0) {
       const firstPlayerHasUuid = league.registeredPlayers[0]?.id?.includes('-');
@@ -64,30 +64,27 @@ export default function LeagueStandings({
       if (firstPlayerHasUuid && league.eventDays) {
         league.eventDays.forEach(eventDay => {
           if (eventDay.courtAssignments && Array.isArray(eventDay.courtAssignments)) {
-            // Build mapping from court assignments: numeric IDs in courtAssignments map to UUIDs by position
             eventDay.courtAssignments.forEach((court, courtIndex) => {
-              if (Array.isArray(court)) {
-                court.forEach((numericId, positionInCourt) => {
-                  const normalizedNumericId = typeof numericId === 'string' ? parseInt(numericId, 10) : numericId;
-                  if (!isNaN(normalizedNumericId)) {
-                    // Try to find UUID player who played on this court on this day
-                    // Match by courtHistory: [{ court: courtIndex, dayNumber: eventDay.dayNumber }]
-                    const matchingPlayer = league.registeredPlayers.find(p => {
-                      if (p.courtHistory && Array.isArray(p.courtHistory)) {
-                        return p.courtHistory.some(ch => 
-                          ch.court === courtIndex && ch.dayNumber === eventDay.dayNumber
-                        );
-                      }
-                      return false;
-                    });
-                    
-                    // If found by courtHistory, map numeric ID to UUID
-                    if (matchingPlayer && matchingPlayer.id && !numericIdToPlayerIdMap.has(normalizedNumericId)) {
-                      numericIdToPlayerIdMap.set(normalizedNumericId, matchingPlayer.id);
-                    }
-                  }
-                });
-              }
+              if (!Array.isArray(court)) return;
+              // courtHistory.court is 1-based
+              const playersOnCourt = league.registeredPlayers.filter(p =>
+                p.courtHistory?.some(ch =>
+                  ch.court === courtIndex + 1 && ch.dayNumber === eventDay.dayNumber
+                )
+              );
+              if (playersOnCourt.length !== 4) return;
+              const sortedPlayers = [...playersOnCourt].sort((a, b) =>
+                String(a.id || '').localeCompare(String(b.id || ''))
+              );
+              court.forEach((rawId, positionInCourt) => {
+                if (positionInCourt >= 4) return;
+                const str = String(rawId);
+                if (str.includes('-')) return; // already UUID
+                const numId = typeof rawId === 'string' ? parseInt(rawId, 10) : rawId;
+                if (isNaN(numId)) return;
+                const uuid = sortedPlayers[positionInCourt]?.id;
+                if (uuid) numericIdToPlayerIdMap.set(numId, uuid);
+              });
             });
           }
         });
@@ -96,59 +93,36 @@ export default function LeagueStandings({
     
     // Iterate through all event days
     league.eventDays.forEach(eventDay => {
-      if (!eventDay.schedule || eventDay.schedule.length === 0) return;
+      const schedule = eventDay.schedule || [];
+      const hasMR = Array.isArray(eventDay.moneyRoundSchedule) && eventDay.moneyRoundSchedule.length > 0;
+      if (schedule.length === 0 && !hasMR) return;
+
+      const completedMatches = schedule.filter(m => m.status === 'completed');
       
-      // Get all completed matches
-      const completedMatches = eventDay.schedule.filter(m => m.status === 'completed');
-      
-      completedMatches.forEach(match => {
+      const processMatch = (match, isMoneyRound = false) => {
         const allPlayers = [...(match.teamA || []), ...(match.teamB || [])];
-        
-        // For each player in the match, add it to their history
         allPlayers.forEach(playerId => {
-          // Normalize player ID - might be numeric (from old matches) or UUID (from current players)
           const normalizedId = typeof playerId === 'string' && playerId.includes('-')
-            ? playerId  // UUID - use as-is
+            ? playerId
             : (typeof playerId === 'string' ? parseInt(playerId, 10) : playerId);
-          
-          // Map numeric ID to UUID if mapping exists
           const lookupId = (typeof normalizedId === 'number' && !isNaN(normalizedId) && numericIdToPlayerIdMap.has(normalizedId))
-            ? numericIdToPlayerIdMap.get(normalizedId)  // Use mapped UUID
-            : normalizedId;  // Use original ID
-          
-          if (!lookupId) return; // Skip invalid IDs
-          
-          // Use string key for consistency (both numbers and UUIDs become strings)
+            ? numericIdToPlayerIdMap.get(normalizedId)
+            : normalizedId;
+          if (!lookupId) return;
           const keyId = String(lookupId);
-          
-          if (!historyByPlayer[keyId]) {
-            historyByPlayer[keyId] = [];
-          }
-          
-          // Determine if player was on team A or B (check using original playerId for includes)
-          const playerTeam = match.teamA.includes(playerId) ? 'A' : 'B';
-          const opponentTeam = playerTeam === 'A' ? 'B' : 'A';
-          const teammates = (playerTeam === 'A' ? match.teamA : match.teamB).filter(id => {
-              // Map teammate IDs too
-              const teammateId = typeof id === 'string' && id.includes('-')
-                ? id
-                : (typeof id === 'string' ? parseInt(id, 10) : id);
-              const mappedTeammateId = (typeof teammateId === 'number' && !isNaN(teammateId) && numericIdToPlayerIdMap.has(teammateId))
-                ? numericIdToPlayerIdMap.get(teammateId)
-                : teammateId;
-              return mappedTeammateId && mappedTeammateId !== lookupId;
-            });
-          const opponents = (playerTeam === 'A' ? match.teamB : match.teamA).map(id => {
-              // Map opponent IDs too
-              const opponentId = typeof id === 'string' && id.includes('-')
-                ? id
-                : (typeof id === 'string' ? parseInt(id, 10) : id);
-              return (typeof opponentId === 'number' && !isNaN(opponentId) && numericIdToPlayerIdMap.has(opponentId))
-                ? numericIdToPlayerIdMap.get(opponentId)
-                : opponentId;
-            });
+          if (!historyByPlayer[keyId]) historyByPlayer[keyId] = [];
+          const playerTeam = (match.teamA || []).some(id => idsEqual(id, playerId)) ? 'A' : 'B';
+          const teammates = (playerTeam === 'A' ? match.teamA || [] : match.teamB || []).filter(id => {
+            const teammateId = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
+            const mapped = (typeof teammateId === 'number' && !isNaN(teammateId) && numericIdToPlayerIdMap.has(teammateId))
+              ? numericIdToPlayerIdMap.get(teammateId) : teammateId;
+            return mapped && !idsEqual(mapped, lookupId);
+          });
+          const opponents = (playerTeam === 'A' ? match.teamB || [] : match.teamA || []).map(id => {
+            const o = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
+            return (typeof o === 'number' && !isNaN(o) && numericIdToPlayerIdMap.has(o)) ? numericIdToPlayerIdMap.get(o) : o;
+          });
           const won = match.winner === playerTeam;
-          
           historyByPlayer[keyId].push({
             eventDayId: eventDay.id,
             dayNumber: eventDay.dayNumber,
@@ -162,20 +136,29 @@ export default function LeagueStandings({
             scoreB: match.scoreB,
             winner: match.winner,
             won,
-            // Show score from player's perspective
             playerScore: playerTeam === 'A' ? match.scoreA : match.scoreB,
-            opponentScore: playerTeam === 'A' ? match.scoreB : match.scoreA
+            opponentScore: playerTeam === 'A' ? match.scoreB : match.scoreA,
+            isMoneyRound
           });
         });
-      });
+      };
+
+      completedMatches.forEach(m => processMatch(m, false));
+
+      // Money Round: include completed matches from moneyRoundSchedule
+      const mrSchedule = eventDay.moneyRoundSchedule;
+      if (Array.isArray(mrSchedule) && mrSchedule.length > 0) {
+        const completedMR = mrSchedule.filter(m => m.status === 'completed');
+        completedMR.forEach(m => processMatch(m, true));
+      }
     });
     
-    // Sort matches by event day and round (most recent first)
+    // Sort matches by event day and round (most recent first); matchId can be numeric or string (e.g. mr-1-2)
     Object.keys(historyByPlayer).forEach(playerId => {
       historyByPlayer[playerId].sort((a, b) => {
         if (a.dayNumber !== b.dayNumber) return b.dayNumber - a.dayNumber;
         if (a.roundNumber !== b.roundNumber) return b.roundNumber - a.roundNumber;
-        return b.matchId - a.matchId;
+        return String(b.matchId || '').localeCompare(String(a.matchId || ''), undefined, { numeric: true });
       });
     });
     
@@ -461,8 +444,8 @@ export default function LeagueStandings({
                                     .join(', ');
                                   
                                   return (
-                                    <tr key={`${match.eventDayId}-${match.matchId}-${idx}`}>
-                                      <td style={{ padding: '8px' }}>Day {match.dayNumber}</td>
+                                    <tr key={`${match.eventDayId}-${match.matchId ?? `m${idx}`}-${idx}`}>
+                                      <td style={{ padding: '8px' }}>Day {match.dayNumber}{match.isMoneyRound ? ' (MR)' : ''}</td>
                                       <td style={{ padding: '8px' }}>Round {match.roundNumber}</td>
                                       <td style={{ padding: '8px' }}>Court {match.courtIndex + 1}</td>
                                       <td style={{ padding: '8px' }}>{teammateNames}</td>
