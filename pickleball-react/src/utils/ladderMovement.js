@@ -492,14 +492,10 @@ export function assignCourtsByRandom(checkedInPlayerIds) {
  * @returns {Array} Consolidated court assignments
  */
 export function consolidateCourtsToHighest(courtAssignments) {
-  // Collect all players from all courts, preserving their court assignments
-  // This preserves the movement hierarchy: players on higher courts stay on higher courts
-  const playersByCourt = courtAssignments.map((court, courtIndex) => ({
+  // Collect all players from all courts, preserving IDs (UUID or numeric)
+  const playersByCourt = (courtAssignments || []).map((court, courtIndex) => ({
     courtIndex,
-    players: court.map(id => {
-      const normalizedId = typeof id === 'string' ? parseInt(id, 10) : id;
-      return isNaN(normalizedId) ? null : normalizedId;
-    }).filter(Boolean)
+    players: (court || []).filter(id => id != null)
   }));
   
   const totalPlayers = playersByCourt.reduce((sum, court) => sum + court.players.length, 0);

@@ -391,38 +391,24 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       }
     );
 
-    // Apply movement using nextCourt from movements
-    const playerNewCourt = {};
-    currentCourtAssignments.forEach((court, courtIndex) => {
-      court.forEach(playerId => {
-        // Normalize playerId to number for consistent key lookup
-        const normalizedId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
-        if (!isNaN(normalizedId)) {
-          playerNewCourt[normalizedId] = courtIndex;
-        }
+    // Apply movement: use assignments array to support UUID and numeric IDs
+    const assignments = [];
+    (currentCourtAssignments || []).forEach((court, courtIndex) => {
+      (court || []).forEach(playerId => {
+        if (playerId != null) assignments.push({ playerId, courtIndex });
       });
     });
-    
-    // Apply movements using nextCourt
     movements.forEach(move => {
-      if (move.nextCourt !== undefined) {
-        // Normalize playerId to number for consistent key lookup
-        const normalizedId = typeof move.playerId === 'string' ? parseInt(move.playerId, 10) : move.playerId;
-        if (!isNaN(normalizedId)) {
-          playerNewCourt[normalizedId] = move.nextCourt;
-        }
-      }
+      const a = assignments.find(x => idsEqual(x.playerId, move.playerId));
+      if (a && move.nextCourt !== undefined) a.courtIndex = move.nextCourt;
     });
-    
-    // Build new court assignments
+
     let newCourtAssignments = [[], [], [], []];
-    Object.entries(playerNewCourt).forEach(([playerId, courtIndex]) => {
-      newCourtAssignments[courtIndex].push(parseInt(playerId));
+    assignments.forEach(({ playerId, courtIndex }) => {
+      newCourtAssignments[courtIndex].push(playerId);
     });
-    
-    // Sort each court
     newCourtAssignments.forEach(court => {
-      court.sort((a, b) => a - b);
+      court.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
     });
 
     // Consolidate to highest courts if less than 16 players
@@ -458,7 +444,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     // Generate next round with partner splitting
     const nextRoundNumber = currentActiveRound + 1;
     const nextRoundMatches = [];
-    let nextMatchId = Math.max(...currentEventDay.schedule.map(m => m.id), 0) + 1;
+    const numIds = (currentEventDay.schedule || []).map(m => m.id).filter(id => typeof id === 'number' && !isNaN(id));
+    let nextMatchId = (numIds.length > 0 ? Math.max(...numIds) : 0) + 1;
     
     newCourtAssignments.forEach((courtPlayers, courtIndex) => {
       if (!courtPlayers || courtPlayers.length < 4) return;

@@ -619,6 +619,10 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
   return allMatches;
 }
 
+function _idSort(a, b) {
+  return String(a).localeCompare(String(b), undefined, { numeric: true });
+}
+
 /**
  * Get previous round partners for a court
  * @param {Array} schedule - Full event day schedule
@@ -627,17 +631,17 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
  * @returns {Array} Array of partner pairs [[id1, id2], [id3, id4]]
  */
 export function getPreviousRoundPartners(schedule, courtIndex, previousRoundNumber) {
-  const previousRoundMatches = schedule.filter(
+  const previousRoundMatches = (schedule || []).filter(
     m => m.courtIndex === courtIndex && m.roundNumber === previousRoundNumber && m.status === 'completed'
   );
   
   const partners = [];
   previousRoundMatches.forEach(match => {
-    if (match.teamA.length === 2) {
-      partners.push([match.teamA[0], match.teamA[1]].sort((a, b) => a - b));
+    if (match.teamA && match.teamA.length === 2) {
+      partners.push([match.teamA[0], match.teamA[1]].slice().sort(_idSort));
     }
-    if (match.teamB.length === 2) {
-      partners.push([match.teamB[0], match.teamB[1]].sort((a, b) => a - b));
+    if (match.teamB && match.teamB.length === 2) {
+      partners.push([match.teamB[0], match.teamB[1]].slice().sort(_idSort));
     }
   });
   
@@ -645,16 +649,13 @@ export function getPreviousRoundPartners(schedule, courtIndex, previousRoundNumb
 }
 
 /**
- * Check if two players were partners in previous round
- * @param {Array} previousPartners - Array of partner pairs from getPreviousRoundPartners
- * @param {number} playerId1 - First player ID
- * @param {number} playerId2 - Second player ID
- * @returns {boolean} True if they were partners
+ * Check if two players were partners in previous round (supports UUID and numeric IDs)
  */
 function werePartners(previousPartners, playerId1, playerId2) {
-  const sortedPair = [playerId1, playerId2].sort((a, b) => a - b);
-  return previousPartners.some(pair => 
-    pair[0] === sortedPair[0] && pair[1] === sortedPair[1]
+  const sortedPair = [playerId1, playerId2].slice().sort(_idSort);
+  return (previousPartners || []).some(pair =>
+    pair && pair.length === 2 &&
+    String(pair[0]) === String(sortedPair[0]) && String(pair[1]) === String(sortedPair[1])
   );
 }
 
