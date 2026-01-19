@@ -26,6 +26,8 @@ import {
   isMoneyRoundComplete
 } from '../utils/moneyRound.js';
 
+const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
+
 export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById, recordPartnerMatchup) {
   const currentEventDay = useMemo(() => {
     if (league.currentEventDayIndex < 0 || league.currentEventDayIndex >= league.eventDays.length) {
@@ -38,11 +40,12 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
   const checkInPlayer = useCallback((playerId) => {
     if (!currentEventDay) return false;
     if (currentEventDay.status !== EVENT_DAY_STATUS.CHECKIN) return false;
-    if (currentEventDay.checkedInPlayers.length >= league.maxPlayersPerDay) return false;
-    if (currentEventDay.checkedInPlayers.includes(playerId)) return false;
+    const list = currentEventDay.checkedInPlayers || [];
+    if (list.length >= league.maxPlayersPerDay) return false;
+    if (list.some(id => idsEqual(id, playerId))) return false;
 
     updateEventDay(currentEventDay.id, {
-      checkedInPlayers: [...currentEventDay.checkedInPlayers, playerId]
+      checkedInPlayers: [...list, playerId]
     });
 
     return true;
@@ -54,7 +57,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     if (currentEventDay.status !== EVENT_DAY_STATUS.CHECKIN) return false;
 
     updateEventDay(currentEventDay.id, {
-      checkedInPlayers: currentEventDay.checkedInPlayers.filter(id => id !== playerId)
+      checkedInPlayers: (currentEventDay.checkedInPlayers || []).filter(id => !idsEqual(id, playerId))
     });
 
     return true;
@@ -726,18 +729,19 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     completeEventDay
   ]);
 
-  // Get players available for check-in
+  // Get players available for check-in (type-safe: UUID or numeric IDs)
   const availableForCheckIn = useMemo(() => {
     if (!currentEventDay) return [];
-    return league.registeredPlayers.filter(
-      p => !currentEventDay.checkedInPlayers.includes(p.id)
+    const checked = currentEventDay.checkedInPlayers || [];
+    return (league.registeredPlayers || []).filter(
+      p => p != null && p.id != null && !checked.some(id => idsEqual(id, p.id))
     );
   }, [currentEventDay, league.registeredPlayers]);
 
-  // Get checked-in players with details
+  // Get checked-in players with details (getPlayerById supports UUID and numeric)
   const checkedInPlayersDetails = useMemo(() => {
     if (!currentEventDay) return [];
-    return currentEventDay.checkedInPlayers
+    return (currentEventDay.checkedInPlayers || [])
       .map((id, index) => {
         const player = getPlayerById(id);
         return player ? { ...player, checkInOrder: index + 1 } : null;
