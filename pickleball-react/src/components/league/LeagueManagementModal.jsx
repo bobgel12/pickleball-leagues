@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
+import { formatSchedule } from '../../utils/constants.js';
+import { LEAGUE_TEMPLATES, getLeagueTemplate, getFormatLabel } from '../../data/leagueTemplates.js';
 
 export default function LeagueManagementModal({
   league = null,
@@ -13,6 +15,7 @@ export default function LeagueManagementModal({
 }) {
   const [leagueName, setLeagueName] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -24,9 +27,11 @@ export default function LeagueManagementModal({
       if (mode === 'edit' && league) {
         setLeagueName(league.leagueName || '');
         setDescription(league.description || '');
+        setSelectedTemplateId('');
       } else {
         setLeagueName('');
         setDescription('');
+        setSelectedTemplateId('');
       }
       setErrors({});
       setShowDeleteConfirm(false);
@@ -55,7 +60,8 @@ export default function LeagueManagementModal({
 
     setIsSaving(true);
     try {
-      await onSave(leagueName.trim(), description.trim() || null);
+      const template = mode === 'create' && selectedTemplateId ? getLeagueTemplate(selectedTemplateId) : null;
+      await onSave(leagueName.trim(), description.trim() || null, template);
       if (toast) toast.success(mode === 'create' ? 'League created successfully' : 'League updated successfully');
       onClose();
     } catch (error) {
@@ -137,6 +143,46 @@ export default function LeagueManagementModal({
         {!showDeleteConfirm ? (
           <>
             {/* Form */}
+            {mode === 'create' && (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>
+                  Template (optional)
+                </label>
+                <select
+                  className="input"
+                  value={selectedTemplateId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedTemplateId(id);
+                    if (id) {
+                      const t = getLeagueTemplate(id);
+                      if (t) {
+                        setLeagueName(t.name);
+                        setDescription(t.description || '');
+                      }
+                    }
+                  }}
+                  disabled={isSaving || isDeleting}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">None</option>
+                  {LEAGUE_TEMPLATES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                {selectedTemplateId && (() => {
+                  const t = getLeagueTemplate(selectedTemplateId);
+                  if (!t) return null;
+                  return (
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      {t.schedule && formatSchedule(t.schedule) && <div>Schedule: {formatSchedule(t.schedule)}</div>}
+                      {t.format && <div>Format: {getFormatLabel(t.format)}</div>}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>
                 League Name *

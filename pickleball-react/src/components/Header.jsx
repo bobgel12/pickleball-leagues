@@ -20,9 +20,11 @@ export default function Header({
   leagues = [],
   currentLeagueId = null,
   currentLeague = null,
+  leagueView = 'leagues',
   onSelectLeague,
   onCreateLeague,
-  onEditLeague
+  onEditLeague,
+  onNavigateToLeagues
 }) {
   const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
@@ -171,15 +173,35 @@ export default function Header({
       {/* League Controls (only show when in league section) */}
       {activeSection === 'league' && (
         <div className="tournament-controls">
-          {leagues.length > 0 && (
-            <LeagueSelector
-              leagues={leagues}
-              currentLeagueId={currentLeagueId}
-              currentLeague={currentLeague}
-              onSelectLeague={onSelectLeague}
-              onCreateLeague={onCreateLeague}
-              onEditLeague={onEditLeague}
-            />
+          {leagues.length > 0 ? (
+            <>
+              {leagueView !== 'leagues' && onNavigateToLeagues && (
+                <button className="btn" onClick={onNavigateToLeagues} type="button" title="View all leagues">
+                  All Leagues
+                </button>
+              )}
+              <LeagueSelector
+                leagues={leagues}
+                currentLeagueId={currentLeagueId}
+                currentLeague={currentLeague}
+                onSelectLeague={onSelectLeague}
+                onCreateLeague={onCreateLeague}
+                onEditLeague={onEditLeague}
+              />
+              {isAdmin && onCreateLeague && (
+                <button className="btn primary" onClick={onCreateLeague} type="button">
+                  <Plus size={16} />
+                  Create New League
+                </button>
+              )}
+            </>
+          ) : (
+            isAdmin && onCreateLeague && (
+              <button className="btn primary" onClick={onCreateLeague} type="button">
+                <Plus size={16} />
+                Create New League
+              </button>
+            )
           )}
           <button className="btn" onClick={onToggleTheme} type="button" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
             {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}

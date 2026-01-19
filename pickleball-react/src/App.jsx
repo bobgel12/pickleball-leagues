@@ -713,9 +713,9 @@ function App() {
     setEditingLeague(null);
   }, []);
 
-  const handleSaveLeagueModal = useCallback(async (leagueName, description) => {
+  const handleSaveLeagueModal = useCallback(async (leagueName, description, template = null) => {
     if (leagueModalMode === 'create') {
-      await handleCreateLeague(leagueName, description);
+      await handleCreateLeague(leagueName, description, template);
     } else if (leagueModalMode === 'edit' && editingLeague) {
       await handleEditLeague(editingLeague.leagueId, leagueName, description);
     }
@@ -909,9 +909,11 @@ function App() {
         leagues={leagueState.leagues || []}
         currentLeagueId={leagueState.currentLeagueId}
         currentLeague={leagueState.league}
+        leagueView={leagueView}
         onSelectLeague={handleSwitchLeague}
         onCreateLeague={adminAuth.isAdmin ? handleShowCreateModal : null}
         onEditLeague={adminAuth.isAdmin ? handleSelectLeagueForEdit : null}
+        onNavigateToLeagues={() => setLeagueView('leagues')}
         isAdmin={adminAuth.isAdmin}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
@@ -934,6 +936,17 @@ function App() {
         onLogin={handleAdminLogin}
         isLoading={adminAuth.isLoading}
         error={adminAuth.error}
+      />
+
+      <LeagueManagementModal
+        league={editingLeague}
+        isOpen={showLeagueModal}
+        mode={leagueModalMode}
+        existingLeagues={leagueState.leagues || []}
+        onClose={handleCloseLeagueModal}
+        onSave={handleSaveLeagueModal}
+        onDelete={handleDeleteLeague}
+        toast={toast}
       />
 
       {/* Tournament Section - Only show in admin mode */}
