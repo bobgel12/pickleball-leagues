@@ -598,7 +598,7 @@ function assignCourtsByPointsWithMovement(movements, checkedInPlayerIds, allPlay
  */
 function distributePlayersToCourts(sortedPlayerIds) {
   const courts = [[], [], [], []];
-  const playersPerCourt = 5;
+  const playersPerCourt = 4;
   
   sortedPlayerIds.forEach((playerId, index) => {
     // Court 4 (index 3) gets top players, Court 1 (index 0) gets lowest
