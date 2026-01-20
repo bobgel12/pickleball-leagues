@@ -541,10 +541,11 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
     // Generate Round 1 partner pair matchups across all players
     const round1Matches = generateRound1PartnerPairMatchups(allCheckedInPlayers, partners, partnerMatchups);
     
-    // Distribute Round 1 matches to courts
+    // Distribute Round 1 matches to courts (highest courts first: Court 4, 3, 2, 1)
+    // so the top court always gets a Round 1 match when we have at least one
     const round1ByCourt = [[], [], [], []]; // Matches per court
     round1Matches.forEach((match, index) => {
-      const courtIndex = index % 4;
+      const courtIndex = 3 - (index % 4);
       round1ByCourt[courtIndex].push(match);
     });
 
