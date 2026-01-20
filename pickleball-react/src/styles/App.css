@@ -3,7 +3,8 @@
   --gap: 12px;
   --radius: 12px;
   --app-header-height: 140px; /* initial; Header measures and overrides to avoid overlay with .event-day-header when scrolling */
-  
+  --event-day-header-height: 80px; /* initial; EventDayManager measures and overrides so .sticky-below-event-day sticks below it */
+
   /* Color System - Light Theme */
   --bg-primary: #f7f7fb;
   --bg-secondary: #ffffff;

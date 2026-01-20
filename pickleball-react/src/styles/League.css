@@ -58,6 +58,17 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Player Check-In / section headers stick below event-day-header so they don’t overlay when scrolling */
+.sticky-below-event-day {
+  position: sticky;
+  top: calc(var(--app-header-height, 120px) + var(--event-day-header-height, 80px));
+  z-index: 90;
+  background: var(--bg-secondary);
+  margin-bottom: 0 !important;
+  padding-bottom: 24px;
+  box-shadow: 0 2px 0 0 var(--border-light, rgba(0,0,0,0.06));
+}
+
 .event-day-header-content {
   display: flex;
   justify-content: space-between;

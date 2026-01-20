@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowLeft, Calendar, Users, Play, CheckCircle2,
   ArrowUp, ArrowDown, Minus, Target, Send
@@ -31,6 +31,20 @@ export default function EventDayManager({
   onFinishAndContinue
 }) {
   const [showMovementPreview, setShowMovementPreview] = useState(false);
+  const eventDayHeaderRef = useRef(null);
+
+  // Expose event-day-header height so "Player Check-In" / section headers can stick below it
+  useEffect(() => {
+    const el = eventDayHeaderRef.current;
+    if (!el) return;
+    const setHeight = () => {
+      document.documentElement.style.setProperty('--event-day-header-height', `${el.offsetHeight}px`);
+    };
+    setHeight();
+    const ro = new ResizeObserver(setHeight);
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+  }, []);
 
   if (!currentEventDay) {
     return (
@@ -92,7 +106,7 @@ export default function EventDayManager({
   return (
     <div className="league-fullscreen">
       {/* Sticky Header */}
-      <div className="event-day-header">
+      <div className="event-day-header" ref={eventDayHeaderRef}>
         <div className="event-day-header-content">
           <div className="event-day-title">
             <button className="btn" onClick={() => onNavigate('dashboard')}>
@@ -133,7 +147,7 @@ export default function EventDayManager({
       {/* Check-In Phase */}
       {currentEventDay.status === EVENT_DAY_STATUS.CHECKIN && (
         <section className="card" style={{ padding: '32px' }}>
-          <h3 style={{ 
+          <h3 className="sticky-below-event-day" style={{ 
             margin: '0 0 24px 0', 
             display: 'flex', 
             alignItems: 'center', 
