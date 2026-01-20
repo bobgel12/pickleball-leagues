@@ -2,6 +2,7 @@
   --pad: 12px;
   --gap: 12px;
   --radius: 12px;
+  --app-header-height: 140px; /* initial; Header measures and overrides to avoid overlay with .event-day-header when scrolling */
   
   /* Color System - Light Theme */
   --bg-primary: #f7f7fb;

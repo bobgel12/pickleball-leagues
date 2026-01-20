@@ -47,10 +47,10 @@
   flex-direction: column;
 }
 
-/* Event Day Header - Sticky */
+/* Event Day Header - Sticky, below app header to avoid overlay when scrolling */
 .event-day-header {
   position: sticky;
-  top: 0;
+  top: var(--app-header-height, 120px);
   z-index: 100;
   background: var(--bg);
   padding: 16px 0 20px;

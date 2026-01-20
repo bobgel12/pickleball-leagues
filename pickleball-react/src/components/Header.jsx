@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Plus, Trash2, Moon, Sun, Wifi, WifiOff, Activity, Award, AlertTriangle, Trophy, Users, Building2, LogOut, Lock, Shield } from 'lucide-react';
 import { useClub } from '../hooks/useClub';
 import LeagueSelector from './league/LeagueSelector';
@@ -26,9 +26,23 @@ export default function Header({
   onEditLeague,
   onNavigateToLeagues
 }) {
+  const headerRef = useRef(null);
   const { club, clearClub } = useClub();
   const currentTournament = tournaments.find(t => t.id === activeTournamentId);
-  
+
+  // Expose header height as CSS variable so .event-day-header can stick below it (avoids overlay when scrolling)
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const setHeight = () => {
+      document.documentElement.style.setProperty('--app-header-height', `${el.offsetHeight}px`);
+    };
+    setHeight();
+    const ro = new ResizeObserver(setHeight);
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+  }, []);
+
   // Ensure we have a valid activeTournamentId value for the select
   const selectValue = activeTournamentId != null ? String(activeTournamentId) : (tournaments.length > 0 ? String(tournaments[0].id) : '');
 
@@ -44,7 +58,7 @@ export default function Header({
   };
 
   return (
-    <header>
+    <header ref={headerRef}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <h1>
           Pickleball League
