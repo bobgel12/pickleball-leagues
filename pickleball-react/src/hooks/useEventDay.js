@@ -8,7 +8,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { EVENT_DAY_STATUS, EVENT_DAY_PHASE } from '../utils/constants.js';
-import { generateEventDaySchedule, calculateScheduleProgress, generateMixedRounds, generateSingleRound, generateNextRoundForRegularLeague, getPreviousRoundPartners } from '../utils/roundRobin.js';
+import { generateEventDaySchedule, calculateScheduleProgress, generateSingleRound, generateNextRoundForRegularLeague, getPreviousRoundPartners } from '../utils/roundRobin.js';
 import {
   calculateLadderMovement,
   assignCourtsByDupr,
@@ -224,12 +224,36 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       // Regular league: don't auto-trigger movement, wait for manual submitRound() call
       // Mixed doubles: keep automatic behavior
       if (league.leagueMode === 'mixed_doubles' && roundComplete && currentActiveRound < 6) {
-        // Mixed doubles: existing logic
-        // Get current court assignments (may have changed from previous rounds)
-        const currentCourtAssignments = currentEventDay.postRound1CourtAssignments || 
-                                       currentEventDay.courtAssignments;
-        
-        // Calculate ladder movement based on ONLY this round's matches
+        // Round 1: derive court assignments from matches (each match's 4 players were on that court).
+        // Round 2+: use postRound1CourtAssignments from the previous round's movement.
+        let currentCourtAssignments;
+        if (currentActiveRound === 1) {
+          const round1ByCourt = [[], [], [], []];
+          currentRoundMatches.forEach((m) => {
+            const players = [...(m.teamA || []), ...(m.teamB || [])].filter(Boolean);
+            if (m.courtIndex >= 0 && m.courtIndex < 4 && players.length === 4) {
+              round1ByCourt[m.courtIndex] = players;
+            }
+          });
+          currentCourtAssignments = round1ByCourt;
+          // Place any sitting-out players (e.g. 7 pairs): add to lowest courts with room
+          const assignedIds = new Set(currentCourtAssignments.flat().map((id) => String(id)));
+          const checkedIn = currentEventDay.checkedInPlayers || [];
+          const missing = checkedIn.filter((id) => !assignedIds.has(String(id)));
+          missing.forEach((playerId) => {
+            for (let i = 0; i < 4; i++) {
+              if (currentCourtAssignments[i].length < 4) {
+                currentCourtAssignments[i].push(playerId);
+                break;
+              }
+            }
+          });
+        } else {
+          currentCourtAssignments = currentEventDay.postRound1CourtAssignments ||
+            currentEventDay.courtAssignments;
+        }
+
+        // Calculate ladder movement: winners move up, losers move down
         const { movements } = calculateLadderMovement(
           currentCourtAssignments,
           currentRoundMatches,
@@ -258,12 +282,17 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         // Build new court assignments
         let newCourtAssignments = [[], [], [], []];
         Object.entries(playerNewCourt).forEach(([playerId, courtIndex]) => {
-          newCourtAssignments[courtIndex].push(parseInt(playerId));
+          const id = /^\d+$/.test(String(playerId)) ? parseInt(playerId, 10) : playerId;
+          newCourtAssignments[courtIndex].push(id);
         });
-        
-        // Sort each court
+
+        // Sort each court (numeric ids by value, otherwise by string)
         newCourtAssignments.forEach(court => {
-          court.sort((a, b) => a - b);
+          court.sort((a, b) => {
+            const na = Number(a), nb = Number(b);
+            if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+            return String(a).localeCompare(String(b), undefined, { numeric: true });
+          });
         });
 
         // Consolidate to highest courts if less than 16 players

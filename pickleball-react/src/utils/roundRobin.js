@@ -541,15 +541,15 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
     // Generate Round 1 partner pair matchups across all players
     const round1Matches = generateRound1PartnerPairMatchups(allCheckedInPlayers, partners, partnerMatchups);
     
-    // Distribute Round 1 matches to courts (highest courts first: Court 4, 3, 2, 1)
-    // so the top court always gets a Round 1 match when we have at least one
-    const round1ByCourt = [[], [], [], []]; // Matches per court
+    // Round 1: all partners play with their partner (pair vs pair). With 8 pairs, 4 matches fill all 4 courts.
+    // Distribute one match per court in order: Court 4, 3, 2, 1 (indices 3, 2, 1, 0).
+    const round1ByCourt = [[], [], [], []];
     round1Matches.forEach((match, index) => {
-      const courtIndex = 3 - (index % 4);
+      const courtIndex = 3 - (index % 4); // 0->3, 1->2, 2->1, 3->0 so all 4 courts get 1 when 4 matches
       round1ByCourt[courtIndex].push(match);
     });
 
-    // Add Round 1 matches to schedule
+    // Add Round 1 matches only. Rounds 2–6 are generated after Round 1 completes (winners move up, losers down, partners split).
     round1ByCourt.forEach((matches, courtIndex) => {
       matches.forEach(match => {
         allMatches.push({
@@ -559,31 +559,7 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
           teamA: match.teamA,
           teamB: match.teamB,
           sittingOut: match.sittingOut,
-          playedWithPartner: true, // Round 1 is always with partner
-          scoreA: null,
-          scoreB: null,
-          winner: null,
-          status: 'pending'
-        });
-      });
-    });
-
-    // Generate rounds 2-6 per court (partners split, mixed teams)
-    courtAssignments.forEach((courtPlayers, courtIndex) => {
-      if (!courtPlayers || courtPlayers.length < 4) return;
-
-      // Generate rounds 2-6 for this court
-      const remainingRounds = generateMixedRounds(courtPlayers, partners, getPlayerGender, 2, 6);
-      
-      remainingRounds.forEach(round => {
-        allMatches.push({
-          id: matchId++,
-          courtIndex,
-          roundNumber: round.roundNumber,
-          teamA: round.teamA,
-          teamB: round.teamB,
-          sittingOut: round.sittingOut,
-          playedWithPartner: false, // Rounds 2-6 are without assigned partner
+          playedWithPartner: true,
           scoreA: null,
           scoreB: null,
           winner: null,
