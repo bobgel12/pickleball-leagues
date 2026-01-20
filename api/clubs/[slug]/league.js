@@ -290,16 +290,18 @@ export default async function handler(req, res) {
     // GET: List all leagues or get specific league
     if (req.method === 'GET') {
       // If leagueId or leagueName provided, return specific league with full data
-      if (leagueId || leagueName) {
+      const lid = (leagueId != null) ? (Array.isArray(leagueId) ? leagueId[0] : leagueId) : null;
+      const lname = (leagueName != null) ? (Array.isArray(leagueName) ? leagueName[0] : leagueName) : null;
+      if (lid || lname) {
         let query = supabase
           .from('league_data')
           .select('id, league_id, league_name, status, description, data, created_at, updated_at')
           .eq('club_id', clubId);
         
-        if (leagueId) {
-          query = query.eq('league_id', leagueId);
-        } else if (leagueName) {
-          query = query.eq('league_name', leagueName);
+        if (lid) {
+          query = query.eq('league_id', lid);
+        } else if (lname) {
+          query = query.eq('league_name', lname);
         }
         
         const { data: leagueRecord, error } = await query.single();
@@ -423,7 +425,12 @@ export default async function handler(req, res) {
         }).filter(Boolean); // Remove null entries
 
         // Merge players into league data (for backward compatibility)
-        const leagueData = leagueRecord.data || {};
+        // Parse JSONB if it comes back as string (some drivers return raw)
+        let leagueData = leagueRecord.data;
+        if (typeof leagueData === 'string') {
+          try { leagueData = JSON.parse(leagueData || '{}'); } catch (e) { leagueData = {}; }
+        }
+        leagueData = leagueData || {};
         
         // AUTO-SYNC: If normalized tables are empty but JSONB has players, sync them
         let finalRegisteredPlayers = registeredPlayers;
@@ -630,6 +637,13 @@ export default async function handler(req, res) {
           ...leagueData,
           registeredPlayers: finalRegisteredPlayers
         };
+        // Ensure eventDays is an array and each day has schedule/moneyRoundSchedule for match history
+        mergedLeagueData.eventDays = Array.isArray(mergedLeagueData.eventDays) ? mergedLeagueData.eventDays : [];
+        mergedLeagueData.eventDays = mergedLeagueData.eventDays.map(d => ({
+          ...d,
+          schedule: Array.isArray(d.schedule) ? d.schedule : [],
+          moneyRoundSchedule: Array.isArray(d.moneyRoundSchedule) ? d.moneyRoundSchedule : []
+        }));
         
         // Log eventDays info from JSONB
         console.log(`GET: Final registeredPlayers count: ${finalRegisteredPlayers.length} for league ${leagueRecord.league_id}`);
@@ -872,9 +886,16 @@ export default async function handler(req, res) {
       };
 
       if (leagueData !== undefined) {
+        // Parse if body.data was double-encoded as string
+        if (typeof leagueData === 'string') {
+          try { leagueData = JSON.parse(leagueData || '{}'); } catch (e) { leagueData = {}; }
+        }
+        leagueData = leagueData || {};
         // Merge incoming leagueData with existing JSONB data to preserve fields not being updated
         // This prevents losing registeredPlayers, eventDays, etc. if they're missing in the update
-        const existingData = existingLeague.data || {};
+        const existingData = typeof existingLeague.data === 'string'
+          ? (() => { try { return JSON.parse(existingLeague.data || '{}'); } catch (e) { return {}; } })()
+          : (existingLeague.data || {});
         
         // Special handling for registeredPlayers: Don't overwrite with empty array
         // If incoming registeredPlayers is empty but existing has data, preserve existing
@@ -888,6 +909,15 @@ export default async function handler(req, res) {
           // Override registeredPlayers if we should preserve existing
           ...(shouldPreservePlayers && { registeredPlayers: existingData.registeredPlayers })
         };
+        // Never wipe eventDays: prefer incoming if non-empty; if incoming empty/missing and existing has data, preserve (match history in eventDays[].schedule)
+        const hasIncoming = Array.isArray(leagueData.eventDays) && leagueData.eventDays.length > 0;
+        const hasExisting = Array.isArray(existingData.eventDays) && existingData.eventDays.length > 0;
+        mergedLeagueData.eventDays = hasIncoming ? leagueData.eventDays : (hasExisting ? existingData.eventDays : (Array.isArray(leagueData.eventDays) ? leagueData.eventDays : []));
+        mergedLeagueData.eventDays = mergedLeagueData.eventDays.map(d => ({
+          ...d,
+          schedule: Array.isArray(d && d.schedule) ? d.schedule : [],
+          moneyRoundSchedule: Array.isArray(d && d.moneyRoundSchedule) ? d.moneyRoundSchedule : []
+        }));
         
         // Log what's being saved to verify eventDays and registeredPlayers are included
         console.log(`PUT: Saving league data for league ${existingLeague.league_id}`, {

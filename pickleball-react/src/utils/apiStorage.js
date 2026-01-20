@@ -378,9 +378,12 @@ export async function loadLeagueData(leagueId = null) {
         createdAt: leagueMetadata.createdAt,
         updatedAt: leagueMetadata.updatedAt
       };
+      // Ensure eventDays is an array (API may omit or return null); match history depends on eventDays[].schedule
+      league.eventDays = Array.isArray(league.eventDays) ? league.eventDays : [];
     } else if (result.data) {
       // Fallback for other response formats
       league = result.data;
+      league.eventDays = Array.isArray(league.eventDays) ? league.eventDays : [];
     }
 
     // League data comes from API/DB only; no localStorage cache

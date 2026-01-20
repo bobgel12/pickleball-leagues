@@ -361,10 +361,12 @@ export function normalizeLeagueState(league) {
     normalized.leagueStatus = LEAGUE_STATUS.SETUP;
   }
 
-  // Ensure eventDays have all required fields
+  // Ensure eventDays have all required fields; always set schedule/moneyRoundSchedule as arrays for match history
   normalized.eventDays = (normalized.eventDays || []).map((day, index) => ({
     ...createEventDay(day.id || index + 1, day.dayNumber || index + 1),
-    ...day
+    ...day,
+    schedule: Array.isArray(day.schedule) ? day.schedule : [],
+    moneyRoundSchedule: Array.isArray(day.moneyRoundSchedule) ? day.moneyRoundSchedule : []
   }));
 
   // Ensure prizePool exists
