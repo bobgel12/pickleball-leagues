@@ -75,14 +75,14 @@ export default function LeagueCheckIn({
 
   return (
     <div className="checkin-container">
-      <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+      <div className="checkin-summary" style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
         Total registered: {totalRegistered} — Available: {availableForCheckIn.length} · Checked in: {checkedInCount}
         {totalRegistered > 0 && availableForCheckIn.length + checkedInCount !== totalRegistered && (
           <span style={{ color: 'var(--warning)', marginLeft: '8px' }}> (counts may not match)</span>
         )}
       </div>
-      {/* Available Players */}
-      <div className="checkin-column">
+      {/* Available Players - left */}
+      <div className="checkin-column checkin-column--available">
         <h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Users size={18} />
@@ -122,8 +122,8 @@ export default function LeagueCheckIn({
         </div>
       </div>
 
-      {/* Checked In Players */}
-      <div className="checkin-column">
+      {/* Checked In Players - right */}
+      <div className="checkin-column checkin-column--checkedin">
         <h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <UserCheck size={18} />

@@ -402,6 +402,19 @@
   min-height: 600px;
 }
 
+/* Summary spans full width; Available (left) and Checked In (right) are inline on row 2 */
+.checkin-summary {
+  grid-column: 1 / -1;
+}
+
+.checkin-column--available {
+  grid-column: 1;
+}
+
+.checkin-column--checkedin {
+  grid-column: 2;
+}
+
 .checkin-column {
   background: var(--surface);
   border-radius: 16px;
@@ -882,6 +895,11 @@
 
   .checkin-container {
     grid-template-columns: 1fr;
+  }
+
+  .checkin-column--available,
+  .checkin-column--checkedin {
+    grid-column: 1;
   }
 
   .event-day-header-content {
