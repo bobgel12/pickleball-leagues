@@ -886,33 +886,31 @@ export default async function handler(req, res) {
       };
 
       if (leagueData !== undefined) {
-        // Parse if body.data was double-encoded as string
-        if (typeof leagueData === 'string') {
-          try { leagueData = JSON.parse(leagueData || '{}'); } catch (e) { leagueData = {}; }
+        // Parse if body.data was double-encoded as string (use new var: leagueData is const from destructuring)
+        let incomingData = leagueData;
+        if (typeof incomingData === 'string') {
+          try { incomingData = JSON.parse(incomingData || '{}'); } catch (e) { incomingData = {}; }
         }
-        leagueData = leagueData || {};
-        // Merge incoming leagueData with existing JSONB data to preserve fields not being updated
-        // This prevents losing registeredPlayers, eventDays, etc. if they're missing in the update
+        incomingData = incomingData || {};
+        // Merge incoming with existing JSONB data to preserve fields not being updated
         const existingData = typeof existingLeague.data === 'string'
           ? (() => { try { return JSON.parse(existingLeague.data || '{}'); } catch (e) { return {}; } })()
           : (existingLeague.data || {});
         
         // Special handling for registeredPlayers: Don't overwrite with empty array
-        // If incoming registeredPlayers is empty but existing has data, preserve existing
         const shouldPreservePlayers = 
           Array.isArray(existingData.registeredPlayers) && existingData.registeredPlayers.length > 0 &&
-          Array.isArray(leagueData.registeredPlayers) && leagueData.registeredPlayers.length === 0;
+          Array.isArray(incomingData.registeredPlayers) && incomingData.registeredPlayers.length === 0;
         
         const mergedLeagueData = {
-          ...existingData, // Preserve existing JSONB data (registeredPlayers, eventDays, etc.)
-          ...leagueData,   // Overwrite with incoming updates
-          // Override registeredPlayers if we should preserve existing
+          ...existingData,
+          ...incomingData,
           ...(shouldPreservePlayers && { registeredPlayers: existingData.registeredPlayers })
         };
         // Never wipe eventDays: prefer incoming if non-empty; if incoming empty/missing and existing has data, preserve (match history in eventDays[].schedule)
-        const hasIncoming = Array.isArray(leagueData.eventDays) && leagueData.eventDays.length > 0;
+        const hasIncoming = Array.isArray(incomingData.eventDays) && incomingData.eventDays.length > 0;
         const hasExisting = Array.isArray(existingData.eventDays) && existingData.eventDays.length > 0;
-        mergedLeagueData.eventDays = hasIncoming ? leagueData.eventDays : (hasExisting ? existingData.eventDays : (Array.isArray(leagueData.eventDays) ? leagueData.eventDays : []));
+        mergedLeagueData.eventDays = hasIncoming ? incomingData.eventDays : (hasExisting ? existingData.eventDays : (Array.isArray(incomingData.eventDays) ? incomingData.eventDays : []));
         mergedLeagueData.eventDays = mergedLeagueData.eventDays.map(d => ({
           ...d,
           schedule: Array.isArray(d && d.schedule) ? d.schedule : [],
@@ -931,7 +929,7 @@ export default async function handler(req, res) {
           }, 0) || 0,
           hasRegisteredPlayers: !!mergedLeagueData.registeredPlayers,
           registeredPlayersCount: mergedLeagueData.registeredPlayers?.length || 0,
-          incomingPlayersCount: leagueData.registeredPlayers?.length || 0,
+          incomingPlayersCount: incomingData.registeredPlayers?.length || 0,
           existingPlayersCount: existingData.registeredPlayers?.length || 0
         });
         
@@ -960,8 +958,8 @@ export default async function handler(req, res) {
           console.log('PUT: No registeredPlayers found in mergedLeagueData', {
             hasMergedLeagueData: !!mergedLeagueData,
             mergedPlayersCount: mergedLeagueData.registeredPlayers?.length || 0,
-            hasIncomingLeagueData: !!leagueData,
-            incomingPlayersCount: leagueData.registeredPlayers?.length || 0,
+            hasIncomingLeagueData: !!incomingData,
+            incomingPlayersCount: incomingData.registeredPlayers?.length || 0,
             hasExistingData: !!existingData,
             existingPlayersCount: existingData.registeredPlayers?.length || 0,
             registeredPlayersType: mergedLeagueData?.registeredPlayers ? typeof mergedLeagueData.registeredPlayers : 'undefined',
