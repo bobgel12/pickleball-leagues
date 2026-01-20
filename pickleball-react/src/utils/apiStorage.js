@@ -229,32 +229,23 @@ export async function saveLeagueData(data, leagueId = null) {
   const clubSlug = getClubSlug();
   if (!clubSlug) {
     console.warn('No club selected, cannot save league data');
-    // Fallback to localStorage for backward compatibility
-    try {
-      localStorage.setItem('pickleball_league_state', JSON.stringify(data));
-      return { success: true, offline: true };
-    } catch (e) {
-      console.error('Failed to save to localStorage:', e);
-      return { success: false, error: e.message };
-    }
+    return { success: false, error: 'No club selected' };
   }
 
   // Extract leagueId from data if not provided
   const targetLeagueId = leagueId || data?.leagueId || data?.league_id;
   const leagueName = data?.leagueName || data?.league_name;
 
-  // Check if offline
+  // Check if offline: queue for sync when back online (no league localStorage; DB is source of truth)
   if (!checkOnline()) {
-    console.warn('Offline - saving to localStorage only');
+    console.warn('Offline - queuing league for sync');
     try {
-      localStorage.setItem('pickleball_league_state', JSON.stringify(data));
-      // Store pending sync
       const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
       pending.push({ type: 'league', clubSlug, leagueId: targetLeagueId, data, timestamp: Date.now() });
       localStorage.setItem('pickleball_pending_sync', JSON.stringify(pending));
       return { success: true, offline: true };
     } catch (e) {
-      console.error('Failed to save to localStorage:', e);
+      console.error('Failed to queue for sync:', e);
       return { success: false, error: e.message };
     }
   }
@@ -306,16 +297,14 @@ export async function saveLeagueData(data, leagueId = null) {
     return { success: true, offline: false };
   } catch (error) {
     console.error('Error saving league data:', error);
-    // Fallback to localStorage
+    // Queue for sync on network error; DB remains source of truth
     try {
-      localStorage.setItem('pickleball_league_state', JSON.stringify(data));
-      // Store pending sync
       const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
       pending.push({ type: 'league', clubSlug, leagueId: targetLeagueId, data, timestamp: Date.now() });
       localStorage.setItem('pickleball_pending_sync', JSON.stringify(pending));
       return { success: true, offline: true, error: error.message };
     } catch (e) {
-      console.error('Failed to save to localStorage:', e);
+      console.error('Failed to queue for sync:', e);
       return { success: false, error: e.message };
     }
   }
@@ -328,26 +317,8 @@ export async function saveLeagueData(data, leagueId = null) {
 export async function loadLeagueData(leagueId = null) {
   const clubSlug = getClubSlug();
   if (!clubSlug) {
-    // Fallback to localStorage for backward compatibility
-    try {
-      const stored = localStorage.getItem('pickleball_league_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
-    }
-  }
-
-  // If offline, try localStorage first
-  if (!checkOnline()) {
-    console.warn('Offline - loading from localStorage');
-    try {
-      const stored = localStorage.getItem('pickleball_league_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
-    }
+    // Cannot call API without a club; league data must come from API
+    return null;
   }
 
   try {
@@ -366,13 +337,7 @@ export async function loadLeagueData(leagueId = null) {
 
     if (!response.ok) {
       if (response.status === 404) {
-        // Try localStorage as fallback
-        try {
-          const stored = localStorage.getItem('pickleball_league_state');
-          return stored ? JSON.parse(stored) : null;
-        } catch (e) {
-          return null;
-        }
+        return null; // League not in database
       }
       throw new Error(`Failed to load league data: ${response.statusText}`);
     }
@@ -417,31 +382,16 @@ export async function loadLeagueData(leagueId = null) {
       // Fallback for other response formats
       league = result.data;
     }
-    
-    if (league) {
-      // Also save to localStorage as cache
-      try {
-        localStorage.setItem('pickleball_league_state', JSON.stringify(league));
-      } catch (e) {
-        // Ignore localStorage errors
-      }
-    }
 
+    // League data comes from API/DB only; no localStorage cache
     return league || null;
   } catch (error) {
     if (error.name === 'AbortError') {
-      console.warn('Request timeout - loading from localStorage');
+      console.warn('Request timeout loading league data');
     } else {
       console.error('Error loading league data:', error);
     }
-    // Fallback to localStorage
-    try {
-      const stored = localStorage.getItem('pickleball_league_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
-    }
+    return null; // API/DB is source of truth; no localStorage fallback
   }
 }
 

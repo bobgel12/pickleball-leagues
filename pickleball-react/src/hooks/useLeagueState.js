@@ -4,8 +4,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  saveLeague,
-  loadLeague,
   clearLeague,
   createDefaultLeague,
   createLeaguePlayer,
@@ -53,17 +51,8 @@ export function useLeagueState() {
   const saveTimeoutRef = useRef(null);
 
   const [club, setClub] = useState(() => {
-    // Try to load from localStorage cache first (for immediate UI render)
-    const loadedLeague = loadLeague();
-    if (loadedLeague && loadedLeague.clubId) {
-      const cachedClub = loadClubFromLocalStorage(loadedLeague.clubId);
-      if (cachedClub) {
-        return cachedClub;
-      }
-    }
-    // Fallback to default club cache
-    const defaultClub = loadClubFromLocalStorage();
-    return defaultClub || null;
+    // Club cache for immediate UI; league data comes from API
+    return loadClubFromLocalStorage() || null;
   });
 
   // Load club from database on mount if clubId exists
@@ -130,6 +119,18 @@ export function useLeagueState() {
     };
   }, [clubSlug]);
 
+  // Persist currentLeagueId to sessionStorage so it survives refresh (enables loading league with eventDays/match history)
+  useEffect(() => {
+    if (clubSlug) {
+      const key = `pickleball_current_league_id_${clubSlug}`;
+      if (currentLeagueId) {
+        sessionStorage.setItem(key, currentLeagueId);
+      } else {
+        sessionStorage.removeItem(key);
+      }
+    }
+  }, [clubSlug, currentLeagueId]);
+
   // Load all leagues and current league from API on mount and when club slug changes
   useEffect(() => {
     const loadData = async () => {
@@ -139,10 +140,20 @@ export function useLeagueState() {
         const allLeagues = await loadAllLeagues();
         setLeagues(allLeagues || []);
 
-        // Only load a specific league if we have a currentLeagueId set
-        // Otherwise, show leagues dashboard first (user selects league)
-        if (currentLeagueId && allLeagues && allLeagues.some(l => l.leagueId === currentLeagueId)) {
-          const loaded = await loadLeagueData(currentLeagueId);
+        // On refresh, currentLeagueId is lost (React state resets). Restore from sessionStorage
+        // so we load the same league and its eventDays/schedule (match history).
+        let leagueIdToLoad = currentLeagueId;
+        if (!leagueIdToLoad && clubSlug) {
+          const persisted = sessionStorage.getItem(`pickleball_current_league_id_${clubSlug}`);
+          if (persisted && (allLeagues || []).some(l => l.leagueId === persisted)) {
+            leagueIdToLoad = persisted;
+            setCurrentLeagueId(persisted);
+          }
+        }
+
+        // Only load a specific league if we have a currentLeagueId set (or restored from storage)
+        if (leagueIdToLoad && allLeagues && allLeagues.some(l => l.leagueId === leagueIdToLoad)) {
+          const loaded = await loadLeagueData(leagueIdToLoad);
           if (loaded) {
             const normalized = normalizeLeagueState(loaded);
             setLeague(normalized);
@@ -163,27 +174,17 @@ export function useLeagueState() {
           setLeague(defaultLeague);
           setCurrentLeagueId(null);
         } else {
-          // Leagues exist but no currentLeagueId - keep league state but don't load specific league
-          // User will select from dashboard
-          // Use default league state for now
+          // Leagues exist but no currentLeagueId - show list; clear any stale id (e.g. after club switch)
           const defaultLeague = createDefaultLeague();
           setLeague(defaultLeague);
+          setCurrentLeagueId(null);
         }
       } catch (error) {
         console.error('Error loading league data:', error);
-        // Fallback to localStorage
-        const localData = loadLeague();
-        if (localData) {
-          setLeague(localData);
-          if (localData.registeredPlayers.length > 0) {
-            const maxId = Math.max(...localData.registeredPlayers.map(p => p.id));
-            setPlayerIdCounter(maxId + 1);
-          }
-          if (localData.eventDays.length > 0) {
-            const maxId = Math.max(...localData.eventDays.map(d => d.id));
-            setEventDayIdCounter(maxId + 1);
-          }
-        }
+        // API/DB is source of truth; use empty league on load failure
+        setLeague(createDefaultLeague());
+        setPlayerIdCounter(1);
+        setEventDayIdCounter(1);
       } finally {
         setIsLoading(false);
       }
@@ -206,16 +207,13 @@ export function useLeagueState() {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Save to localStorage immediately (fallback)
-    saveLeague(league);
-
+    // Persist to DB via API; no localStorage for league data
     // Debounce API save to avoid too many requests
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await saveLeagueData(league, league.leagueId || currentLeagueId);
       } catch (error) {
         console.error('Error saving league data to API:', error);
-        // localStorage already saved as fallback
       }
     }, 1000); // 1 second debounce
 
