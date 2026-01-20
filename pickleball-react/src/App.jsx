@@ -46,7 +46,6 @@ import {
   LeagueSetup,
   EventDayManager,
   LeagueStandings,
-  PlayerLeagueProfile,
   LeagueHelp,
   PrizePoolDashboard
 } from './components/league';
@@ -95,7 +94,6 @@ function App() {
 
   // League navigation
   const [leagueView, setLeagueView] = useState('leagues'); // Start with leagues dashboard
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [showLeagueModal, setShowLeagueModal] = useState(false);
   const [leagueModalMode, setLeagueModalMode] = useState('create'); // 'create' or 'edit'
   const [editingLeague, setEditingLeague] = useState(null);
@@ -109,9 +107,6 @@ function App() {
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
-    'Escape': () => {
-      setSelectedPlayer(null);
-    },
     'Enter': () => {
       // Submit round if all courts are ready (only in tournaments mode)
       if (activeSection === 'tournaments' && appState.currentTournament) {
@@ -850,7 +845,6 @@ function App() {
             pointsLeader={leagueState.pointsLeader}
             winPercentageLeader={leagueState.winPercentageLeader}
             getPlayerBalance={leagueState.getPlayerBalance}
-            onPlayerClick={(player) => setSelectedPlayer(player)}
             onNavigate={handleLeagueNavigate}
             getPlayerById={leagueState.getPlayerById}
           />
@@ -1019,15 +1013,6 @@ function App() {
         </main>
       )}
 
-      {/* Player Profile Modal */}
-      {selectedPlayer && (
-        <PlayerLeagueProfile
-          player={selectedPlayer}
-          league={leagueState.league}
-          getPlayerBalance={leagueState.getPlayerBalance}
-          onClose={() => setSelectedPlayer(null)}
-        />
-      )}
     </>
   );
 }

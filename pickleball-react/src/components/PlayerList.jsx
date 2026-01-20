@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { clone } from '../utils/helpers.js';
-import PlayerProfile from './PlayerProfile';
 import EmptyState from './EmptyState';
 
 export default function PlayerList({ tournament, onRemovePlayer, onAdjustSeed, getPlayerById }) {
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   if (!tournament) return null;
 
@@ -45,11 +43,7 @@ export default function PlayerList({ tournament, onRemovePlayer, onAdjustSeed, g
           <div id="playerList" className="list">
           {sorted.map((p, idx) => (
             <div key={`player-${p.id}-${idx}-${p.name}`} className="player">
-              <span
-                style={{ cursor: 'pointer', fontWeight: 500 }}
-                onClick={() => setSelectedPlayer(p)}
-                title="Click to view profile"
-              >
+              <span style={{ fontWeight: 500 }}>
                 {p.name}
               </span>
               <span className="row">
@@ -81,14 +75,6 @@ export default function PlayerList({ tournament, onRemovePlayer, onAdjustSeed, g
           </div>
         )}
       </div>
-      {selectedPlayer && (
-        <PlayerProfile
-          player={selectedPlayer}
-          tournament={tournament}
-          getPlayerById={getPlayerById}
-          onClose={() => setSelectedPlayer(null)}
-        />
-      )}
     </section>
   );
 }

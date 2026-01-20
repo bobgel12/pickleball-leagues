@@ -767,109 +767,6 @@
 }
 
 /* ========================================
-   PLAYER PROFILE MODAL
-   ======================================== */
-
-.player-profile-modal {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 520px;
-  max-width: 100%;
-  background: white;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
-  z-index: 1000;
-  overflow-y: auto;
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-.player-profile-modal .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: -1;
-}
-
-.player-profile-header {
-  padding: 28px;
-  background: white;
-  border-bottom: 1px solid var(--border);
-}
-
-.player-profile-header h2 {
-  margin: 0 0 10px 0;
-  font-size: 26px;
-}
-
-.player-profile-header .dupr-rating {
-  font-size: 15px;
-  color: var(--text-secondary);
-}
-
-.player-profile-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  padding: 28px;
-}
-
-.player-profile-stats .stat-box {
-  text-align: center;
-  padding: 20px;
-  background: var(--surface);
-  border-radius: 12px;
-}
-
-.player-profile-stats .stat-box .value {
-  font-size: 32px;
-  font-weight: 800;
-  color: var(--primary);
-}
-
-.player-profile-stats .stat-box .label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.player-court-history {
-  padding: 28px;
-}
-
-.player-court-history h3 {
-  margin: 0 0 20px 0;
-  font-size: 16px;
-}
-
-.court-history-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 140px;
-  padding: 20px 0;
-}
-
-.court-history-bar {
-  flex: 1;
-  background: var(--primary);
-  border-radius: 6px 6px 0 0;
-  min-height: 24px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 6px;
-  font-size: 11px;
-  color: white;
-  font-weight: 600;
-}
-
-/* ========================================
    LADDER MOVEMENT PREVIEW
    ======================================== */
 
@@ -985,10 +882,6 @@
 
   .checkin-container {
     grid-template-columns: 1fr;
-  }
-
-  .player-profile-modal {
-    width: 100%;
   }
 
   .event-day-header-content {
