@@ -542,12 +542,23 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
     const round1Matches = generateRound1PartnerPairMatchups(allCheckedInPlayers, partners, partnerMatchups);
     
     // Round 1: all partners play with their partner (pair vs pair). With 8 pairs, 4 matches fill all 4 courts.
-    // Distribute one match per court in order: Court 4, 3, 2, 1 (indices 3, 2, 1, 0).
+    // Distribute one match per court: Court 4, 3, 2, 1 (indices 3, 2, 1, 0).
     const round1ByCourt = [[], [], [], []];
-    round1Matches.forEach((match, index) => {
-      const courtIndex = 3 - (index % 4); // 0->3, 1->2, 2->1, 3->0 so all 4 courts get 1 when 4 matches
-      round1ByCourt[courtIndex].push(match);
-    });
+    
+    // Ensure all 4 courts get a match when we have exactly 4 matches (8 pairs)
+    if (round1Matches.length === 4) {
+      // Explicitly assign one match to each court
+      round1Matches.forEach((match, index) => {
+        const courtIndex = 3 - index; // 0->3, 1->2, 2->1, 3->0
+        round1ByCourt[courtIndex].push(match);
+      });
+    } else {
+      // For other cases (fewer or more matches), use modulo distribution
+      round1Matches.forEach((match, index) => {
+        const courtIndex = 3 - (index % 4);
+        round1ByCourt[courtIndex].push(match);
+      });
+    }
 
     // Add Round 1 matches only. Rounds 2–6 are generated after Round 1 completes (winners move up, losers down, partners split).
     round1ByCourt.forEach((matches, courtIndex) => {
