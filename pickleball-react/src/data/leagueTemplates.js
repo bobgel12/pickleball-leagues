@@ -1,3 +1,5 @@
+import { EVENT_DAY_RULES } from '../utils/constants.js';
+
 /**
  * League templates for create-from-template and seed script.
  * Each template has: id, name, description, schedule, format, and config overrides
@@ -14,6 +16,14 @@ Each League Day you'll begin with a Blind Draw, winners move up/losers move down
     schedule: { dayOfWeek: 1, start: '11:00', end: '13:00' },
     format: 'social',
     leagueMode: 'regular',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.BLIND_DRAW,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.WINNERS_UP_LOSERS_DOWN,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.BLIND_DRAW,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.MIX_AND_SPLIT
+    }
   },
   {
     id: 'silver-dinkers',
@@ -24,6 +34,14 @@ Each League Day you'll begin with a Blind Draw, winners move up/losers move down
     schedule: { dayOfWeek: 2, start: '09:00', end: '11:00' },
     format: '50+',
     leagueMode: 'regular',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.BLIND_DRAW,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.WINNERS_UP_LOSERS_DOWN,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.BLIND_DRAW,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.MIX_AND_SPLIT
+    }
   },
   {
     id: 'tuesday-money',
@@ -45,6 +63,14 @@ League is 8 weeks, you must play a minimum of 6 League Days to qualify for a pay
     moneyRoundEnabled: true,
     totalEventDays: 8,
     maxPlayersPerDay: 20,
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.ONE_PLAYER_UP_DOWN,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_4_OR_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.RANDOM_START,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.FLEXIBLE,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.POOL_PLAY
+    }
   },
   {
     id: 'forever-mixed',
@@ -55,6 +81,14 @@ Come join us for weekly games, new partners, and plenty of pickleball camaraderi
     schedule: { dayOfWeek: 3, start: '18:30', end: '20:30' },
     format: 'mixed',
     leagueMode: 'mixed_doubles',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.PARTNER_BASED,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+    }
   },
   {
     id: 'thursday-ladder-morning',
@@ -65,6 +99,14 @@ Climb the ladder with us at Pickleball 706!`,
     schedule: { dayOfWeek: 4, start: '09:00', end: '11:00' },
     format: 'ladder',
     leagueMode: 'regular',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+    }
   },
   {
     id: 'thursday-ladder-evening',
@@ -75,6 +117,14 @@ Climb the ladder with us at Pickleball 706!`,
     schedule: { dayOfWeek: 4, start: '18:30', end: '20:30' },
     format: 'ladder',
     leagueMode: 'regular',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+    }
   },
   {
     id: 'coed-learning',
@@ -87,6 +137,14 @@ Each League Day you'll begin with a Blind Draw, winners move up, Mix and Split, 
     schedule: { dayOfWeek: 5, start: '18:00', end: '20:00' },
     format: 'learning',
     leagueMode: 'regular',
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.BLIND_DRAW,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.WINNERS_UP_LOSERS_DOWN,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.BLIND_DRAW,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.MIX_AND_SPLIT
+    }
   },
 ];
 

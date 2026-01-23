@@ -1066,6 +1066,7 @@ export function useLeagueState() {
         if (template.moneyRoundEnabled !== undefined) overrides.moneyRoundEnabled = template.moneyRoundEnabled;
         if (template.totalEventDays !== undefined) overrides.totalEventDays = template.totalEventDays;
         if (template.maxPlayersPerDay !== undefined) overrides.maxPlayersPerDay = template.maxPlayersPerDay;
+        if (template.eventDayRules) overrides.eventDayRules = template.eventDayRules;
       }
       const defaultLeagueData = createDefaultLeague(overrides);
 

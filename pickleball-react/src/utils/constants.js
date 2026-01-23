@@ -18,6 +18,42 @@ export const LEAGUE_DEFAULTS = {
   totalEventDays: 10
 };
 
+// Event Day Rules Defaults
+export const EVENT_DAY_RULES = {
+  initialAssignment: {
+    BLIND_DRAW: 'blind_draw',
+    DUPR_BASED: 'dupr_based',
+    RANDOM: 'random',
+    POINTS_BASED: 'points_based'
+  },
+  ladderMovement: {
+    WINNERS_UP_LOSERS_DOWN: 'winners_up_losers_down',
+    ONE_PLAYER_UP_DOWN: 'one_player_up_down',
+    STANDARD_LADDER: 'standard_ladder',
+    PARTNER_BASED: 'partner_based'
+  },
+  poolFormat: {
+    POOLS_OF_4: 'pools_of_4',
+    POOLS_OF_5: 'pools_of_5',
+    POOLS_OF_4_OR_5: 'pools_of_4_or_5'
+  },
+  startingMethod: {
+    BLIND_DRAW: 'blind_draw',
+    LADDER_POSITION: 'ladder_position',
+    RANDOM_START: 'random_start'
+  },
+  divisibilityRequirement: {
+    DIVISIBLE_BY_4: 'divisible_by_4',
+    DIVISIBLE_BY_5: 'divisible_by_5',
+    FLEXIBLE: 'flexible'
+  },
+  roundRobinType: {
+    FULL_ROUND_ROBIN: 'full_round_robin',
+    POOL_PLAY: 'pool_play',
+    MIX_AND_SPLIT: 'mix_and_split'
+  }
+};
+
 export const LEAGUE_STATUS = {
   SETUP: 'setup',
   REGISTRATION: 'registration',

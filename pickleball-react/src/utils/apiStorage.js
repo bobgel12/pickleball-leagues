@@ -13,22 +13,28 @@ export function getApiBase() {
     const stagingApiUrl = import.meta.env.VITE_STAGING_API_URL;
     if (stagingApiUrl) {
       // Ensure it ends with /api/clubs
-      return stagingApiUrl.endsWith('/api/clubs') 
+      const url = stagingApiUrl.endsWith('/api/clubs') 
         ? stagingApiUrl 
         : `${stagingApiUrl.replace(/\/$/, '')}/api/clubs`;
+      console.log('[API] Using staging API:', url);
+      return url;
     }
     
     // Check if production/override API URL is configured
     const prodApiUrl = import.meta.env.VITE_API_BASE_URL;
     if (prodApiUrl) {
       // Ensure it ends with /api/clubs
-      return prodApiUrl.endsWith('/api/clubs') 
+      const url = prodApiUrl.endsWith('/api/clubs') 
         ? prodApiUrl 
         : `${prodApiUrl.replace(/\/$/, '')}/api/clubs`;
+      console.log('[API] Using production API:', url);
+      return url;
     }
     
     // Use absolute URL from origin to bypass Vite's base path
-    return `${window.location.origin}/api/clubs`;
+    const fallbackUrl = `${window.location.origin}/api/clubs`;
+    console.warn('[API] Using fallback (localhost):', fallbackUrl, 'VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+    return fallbackUrl;
   }
   return '/api/clubs';
 }

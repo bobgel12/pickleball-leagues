@@ -9,6 +9,7 @@ export { default as LeagueCourts } from './LeagueCourts.jsx';
 export { default as EventDayManager } from './EventDayManager.jsx';
 export { default as LeagueStandings } from './LeagueStandings.jsx';
 export { default as LeagueHelp } from './LeagueHelp.jsx';
+export { default as LeagueTemplateRulesHelp } from './LeagueTemplateRulesHelp.jsx';
 export { default as MoneyRoundCourts } from './MoneyRoundCourts.jsx';
 export { default as PrizePoolDashboard } from './PrizePoolDashboard.jsx';
 

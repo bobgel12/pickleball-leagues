@@ -7,7 +7,7 @@
  * - Middle performer(s) stay on the same court
  */
 
-import { COURT_MULTIPLIERS, SMART_COURT_WEIGHTS } from './constants.js';
+import { COURT_MULTIPLIERS, SMART_COURT_WEIGHTS, EVENT_DAY_RULES } from './constants.js';
 
 /**
  * Calculate player performance score for a single event day
@@ -132,12 +132,12 @@ export function calculateCourtRankings(courtPlayers, matches, scoringSystem = 's
  * @returns {Array} Array of { playerId, currentCourt, nextCourt, movement }
  */
 export function determineCourtMovement(courtIndex, rankedPlayers, options = {}) {
-  const { partners = {}, leagueMode = 'regular', round1Matches = [] } = options;
+  const { partners = {}, leagueMode = 'regular', round1Matches = [], ladderMovement = EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER } = options;
   const movements = [];
   const numPlayers = rankedPlayers.length;
 
   // For mixed doubles, check Round 1 results for partner movement
-  if (leagueMode === 'mixed_doubles' && round1Matches.length > 0) {
+  if (leagueMode === 'mixed_doubles' && ladderMovement === EVENT_DAY_RULES.ladderMovement.PARTNER_BASED && round1Matches.length > 0) {
     const round1Match = round1Matches.find(m => m.courtIndex === courtIndex && m.roundNumber === 1);
     
     if (round1Match && round1Match.status === 'completed') {
@@ -244,50 +244,77 @@ export function determineCourtMovement(courtIndex, rankedPlayers, options = {}) 
     }
   }
 
-  // Regular movement logic (for non-mixed-doubles or if Round 1 not completed)
-  rankedPlayers.forEach((player, index) => {
-    let nextCourt = courtIndex;
-    let movement = 'stay';
+  const moveOnePlayerUpDown = () => {
+    rankedPlayers.forEach((player, index) => {
+      let nextCourt = courtIndex;
+      let movement = 'stay';
 
-    if (numPlayers >= 5) {
-      // Standard 5-player court rules
-      if (index < 2) {
-        // Top 2 move up (unless already at Court 4)
-        if (courtIndex < 3) {
-          nextCourt = courtIndex + 1;
-          movement = 'up';
-        }
-      } else if (index >= numPlayers - 2) {
-        // Bottom 2 move down (unless already at Court 1)
-        if (courtIndex > 0) {
-          nextCourt = courtIndex - 1;
-          movement = 'down';
-        }
+      if (index === 0 && courtIndex < 3) {
+        nextCourt = courtIndex + 1;
+        movement = 'up';
+      } else if (index === numPlayers - 1 && courtIndex > 0) {
+        nextCourt = courtIndex - 1;
+        movement = 'down';
       }
-    } else if (numPlayers === 4) {
-      // 4-player court: top 2 up, bottom 2 down
-      if (index < 2) {
-        if (courtIndex < 3) {
-          nextCourt = courtIndex + 1;
-          movement = 'up';
-        }
-      } else {
-        if (courtIndex > 0) {
-          nextCourt = courtIndex - 1;
-          movement = 'down';
-        }
-      }
-    }
 
-    movements.push({
-      playerId: player.playerId,
-      currentCourt: courtIndex,
-      nextCourt,
-      movement,
-      rank: player.rank,
-      performance: player.performance
+      movements.push({
+        playerId: player.playerId,
+        currentCourt: courtIndex,
+        nextCourt,
+        movement,
+        rank: player.rank,
+        performance: player.performance
+      });
     });
-  });
+  };
+
+  const moveWinnersUpLosersDown = () => {
+    rankedPlayers.forEach((player, index) => {
+      let nextCourt = courtIndex;
+      let movement = 'stay';
+
+      if (numPlayers >= 5) {
+        // Standard 5-player court rules
+        if (index < 2) {
+          if (courtIndex < 3) {
+            nextCourt = courtIndex + 1;
+            movement = 'up';
+          }
+        } else if (index >= numPlayers - 2) {
+          if (courtIndex > 0) {
+            nextCourt = courtIndex - 1;
+            movement = 'down';
+          }
+        }
+      } else if (numPlayers === 4) {
+        // 4-player court: top 2 up, bottom 2 down
+        if (index < 2) {
+          if (courtIndex < 3) {
+            nextCourt = courtIndex + 1;
+            movement = 'up';
+          }
+        } else if (courtIndex > 0) {
+          nextCourt = courtIndex - 1;
+          movement = 'down';
+        }
+      }
+
+      movements.push({
+        playerId: player.playerId,
+        currentCourt: courtIndex,
+        nextCourt,
+        movement,
+        rank: player.rank,
+        performance: player.performance
+      });
+    });
+  };
+
+  if (ladderMovement === EVENT_DAY_RULES.ladderMovement.ONE_PLAYER_UP_DOWN) {
+    moveOnePlayerUpDown();
+  } else {
+    moveWinnersUpLosersDown();
+  }
 
   return movements;
 }

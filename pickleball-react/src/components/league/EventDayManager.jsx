@@ -67,7 +67,7 @@ export default function EventDayManager({
   const handleCloseEventDay = () => {
     const confirmed = window.confirm(
       'Close this event day?\n\n' +
-      'Player stats will be updated and ladder movement will be applied.'
+      'Player stats will be updated. Ladder movement is applied when each round is submitted.'
     );
     if (confirmed) {
       const success = onCloseEventDay();
@@ -82,7 +82,7 @@ export default function EventDayManager({
     const nextDayNumber = currentEventDay.dayNumber + 1;
     const confirmed = window.confirm(
       `Finish Event Day ${currentEventDay.dayNumber} and start Event Day ${nextDayNumber}?\n\n` +
-      'Player stats will be updated and ladder movement will be applied.'
+      'Player stats will be updated. Ladder movement is applied when each round is submitted.'
     );
     if (confirmed) {
       if (onFinishAndContinue) {

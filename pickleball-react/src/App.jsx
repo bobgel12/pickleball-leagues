@@ -47,6 +47,7 @@ import {
   EventDayManager,
   LeagueStandings,
   LeagueHelp,
+  LeagueTemplateRulesHelp,
   PrizePoolDashboard
 } from './components/league';
 
@@ -1009,6 +1010,7 @@ function App() {
         <main className="league-main">
           {renderLeagueSection()}
           <LeagueHelp league={leagueState.league} />
+          <LeagueTemplateRulesHelp />
           <LegalDisclaimer />
         </main>
       )}

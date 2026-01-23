@@ -2,7 +2,7 @@
  * League Storage - Persistence and Export/Import for Ladder League
  */
 
-import { LEAGUE_STORAGE_KEY, CLUB_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS, LEAGUE_MODE } from './constants.js';
+import { LEAGUE_STORAGE_KEY, CLUB_STORAGE_KEY, LEAGUE_DEFAULTS, LEAGUE_STATUS, EVENT_DAY_STATUS, EVENT_DAY_PHASE, MONEY_ROUND_DEFAULTS, LEAGUE_MODE, EVENT_DAY_RULES } from './constants.js';
 
 /**
  * Create a default league state
@@ -64,6 +64,14 @@ export function createDefaultLeague(overrides = {}) {
       balance: 0,
       contributions: [], // { id, eventDayId, playerId, amount, paid: boolean, paidAt: null }
       payouts: [] // { id, playerId, amount, date, reason }
+    },
+    eventDayRules: {
+      initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+      ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
     },
     ...overrides
   };
@@ -377,6 +385,20 @@ export function normalizeLeagueState(league) {
       payouts: []
     };
   }
+
+  // Ensure eventDayRules exists and has all fields
+  const defaultEventDayRules = {
+    initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+    ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+    poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+    startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+    divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+    roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+  };
+  normalized.eventDayRules = {
+    ...defaultEventDayRules,
+    ...(normalized.eventDayRules || {})
+  };
 
   // Ensure moneyRoundConfig exists
   if (!normalized.moneyRoundConfig) {

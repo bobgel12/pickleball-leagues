@@ -4,7 +4,7 @@ import {
   Save, RefreshCw, ArrowLeft, Dice1, Settings, DollarSign,
   ToggleLeft, ToggleRight
 } from 'lucide-react';
-import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS, LEAGUE_MODE, GENDER } from '../../utils/constants.js';
+import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS, LEAGUE_MODE, GENDER, EVENT_DAY_RULES } from '../../utils/constants.js';
 import { parseCSV } from '../../utils/csvParser.js';
 
 export default function LeagueSetup({
@@ -33,6 +33,19 @@ export default function LeagueSetup({
   const [totalEventDays, setTotalEventDays] = useState(league.totalEventDays);
   const [maxPlayers, setMaxPlayers] = useState(league.maxPlayers || LEAGUE_DEFAULTS.maxPlayers);
   const [maxPlayersPerDay, setMaxPlayersPerDay] = useState(league.maxPlayersPerDay || LEAGUE_DEFAULTS.maxPlayersPerDay);
+
+  const defaultEventDayRules = {
+    initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+    ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+    poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+    startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+    divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+    roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+  };
+  const [eventDayRules, setEventDayRules] = useState({
+    ...defaultEventDayRules,
+    ...(league.eventDayRules || {})
+  });
   
   // Money Round settings
   const [moneyRoundEnabled, setMoneyRoundEnabled] = useState(league.moneyRoundEnabled || false);
@@ -65,7 +78,8 @@ export default function LeagueSetup({
       totalEventDays: validatedEventDays,
       maxPlayers: validatedMaxPlayers,
       maxPlayersPerDay: validatedMaxPerDay,
-      moneyRoundEnabled
+      moneyRoundEnabled,
+      eventDayRules
     });
 
     // Update Money Round config if the function is provided
@@ -411,6 +425,111 @@ export default function LeagueSetup({
                 Open Registration
               </button>
             )}
+          </div>
+        </div>
+      </section>
+
+      {/* Event Day Rules */}
+      <section className="card">
+        <h2 style={{ margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Settings size={20} />
+          Event Day Rules
+        </h2>
+
+        <div className="form-section">
+          <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Initial Court Assignment</label>
+              <select
+                value={eventDayRules.initialAssignment}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, initialAssignment: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.initialAssignment.BLIND_DRAW}>Blind Draw (random)</option>
+                <option value={EVENT_DAY_RULES.initialAssignment.DUPR_BASED}>DUPR Based</option>
+                <option value={EVENT_DAY_RULES.initialAssignment.RANDOM}>Random</option>
+                <option value={EVENT_DAY_RULES.initialAssignment.POINTS_BASED}>Points Based</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Determines how Court 1-4 are seeded on Day 1.
+              </small>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Ladder Movement</label>
+              <select
+                value={eventDayRules.ladderMovement}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, ladderMovement: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.ladderMovement.WINNERS_UP_LOSERS_DOWN}>Winners Up / Losers Down</option>
+                <option value={EVENT_DAY_RULES.ladderMovement.ONE_PLAYER_UP_DOWN}>One Player Up / Down</option>
+                <option value={EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER}>Standard Ladder</option>
+                <option value={EVENT_DAY_RULES.ladderMovement.PARTNER_BASED}>Partner Based (Mixed Doubles)</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Controls how players move between courts after each round submission.
+              </small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Pool Format</label>
+              <select
+                value={eventDayRules.poolFormat}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, poolFormat: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.poolFormat.POOLS_OF_4}>Pools of 4</option>
+                <option value={EVENT_DAY_RULES.poolFormat.POOLS_OF_5}>Pools of 5</option>
+                <option value={EVENT_DAY_RULES.poolFormat.POOLS_OF_4_OR_5}>Pools of 4 or 5</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Sets the default players per court for the day.
+              </small>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Starting Method</label>
+              <select
+                value={eventDayRules.startingMethod}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, startingMethod: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.startingMethod.BLIND_DRAW}>Blind Draw</option>
+                <option value={EVENT_DAY_RULES.startingMethod.LADDER_POSITION}>Ladder Position</option>
+                <option value={EVENT_DAY_RULES.startingMethod.RANDOM_START}>Random Start</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Determines how each event day begins after Day 1.
+              </small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Divisibility Requirement</label>
+              <select
+                value={eventDayRules.divisibilityRequirement}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, divisibilityRequirement: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4}>Divisible by 4</option>
+                <option value={EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_5}>Divisible by 5</option>
+                <option value={EVENT_DAY_RULES.divisibilityRequirement.FLEXIBLE}>Flexible</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Validates check-in counts before starting the event day.
+              </small>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Round Robin Type</label>
+              <select
+                value={eventDayRules.roundRobinType}
+                onChange={(e) => setEventDayRules(prev => ({ ...prev, roundRobinType: e.target.value }))}
+              >
+                <option value={EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN}>Full Round Robin</option>
+                <option value={EVENT_DAY_RULES.roundRobinType.POOL_PLAY}>Pool Play</option>
+                <option value={EVENT_DAY_RULES.roundRobinType.MIX_AND_SPLIT}>Mix and Split</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Controls how matchups rotate within each court.
+              </small>
+            </div>
           </div>
         </div>
       </section>

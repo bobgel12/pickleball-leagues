@@ -117,8 +117,8 @@ Each court runs a social doubles round-robin where every player partners with ev
       icon: ArrowUpDown,
       title: 'Ladder Movement',
       content: `
-**End of Each Event Day:**
-Players are ranked within their court based on performance. Movement rules:
+**After Each Round Submission:**
+Players are ranked within their court based on that round's performance. Movement rules:
 
 **Standard Movement:**
 • Top 2 players on each court → Move UP one court
@@ -130,8 +130,8 @@ Players are ranked within their court based on performance. Movement rules:
 • Court 1 (Lowest): Bottom 2 stay, top 2 move up
 
 **Movement Takes Effect:**
-• Applied at the START of the next event day
-• Only applies to players who check in for that day
+• Applied immediately to set courts for the next round
+• Continues until the admin ends the event day
       `
     },
     {

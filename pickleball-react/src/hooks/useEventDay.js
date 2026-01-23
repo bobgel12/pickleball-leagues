@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { EVENT_DAY_STATUS, EVENT_DAY_PHASE } from '../utils/constants.js';
+import { EVENT_DAY_STATUS, EVENT_DAY_PHASE, EVENT_DAY_RULES } from '../utils/constants.js';
 import { generateEventDaySchedule, calculateScheduleProgress, generateSingleRound, generateNextRoundForRegularLeague, getPreviousRoundPartners } from '../utils/roundRobin.js';
 import {
   calculateLadderMovement,
@@ -29,6 +29,19 @@ import {
 const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
 
 export function useEventDay(league, updateEventDay, updatePlayerStats, completeEventDay, getPlayerById, recordPartnerMatchup) {
+  const defaultEventDayRules = {
+    initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
+    ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
+    poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+    startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
+    divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+    roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
+  };
+  const resolvedEventDayRules = useMemo(() => ({
+    ...defaultEventDayRules,
+    ...(league.eventDayRules || {})
+  }), [league.eventDayRules]);
+
   const currentEventDay = useMemo(() => {
     if (league.currentEventDayIndex < 0 || league.currentEventDayIndex >= league.eventDays.length) {
       return null;
@@ -80,31 +93,97 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       return false;
     }
 
-    // For regular ladder league, validate multiple of 4 (use effective count)
-    if (league.leagueMode === 'regular') {
-      if (effectiveCheckedIn.length % 4 !== 0) {
-        console.error('closeCheckInAndGenerateCourts: Regular league requires multiple of 4', effectiveCheckedIn.length);
-        return false;
+    const rules = resolvedEventDayRules;
+
+    const getPlayersPerCourt = (count, poolFormat) => {
+      if (poolFormat === EVENT_DAY_RULES.poolFormat.POOLS_OF_4) return 4;
+      if (poolFormat === EVENT_DAY_RULES.poolFormat.POOLS_OF_5) return 5;
+      if (poolFormat === EVENT_DAY_RULES.poolFormat.POOLS_OF_4_OR_5) {
+        if (count % 5 === 0) return 5;
+        return 4;
       }
+      return 4;
+    };
+
+    const playersPerCourt = getPlayersPerCourt(effectiveCheckedIn.length, rules.poolFormat);
+
+    const validateDivisibility = (count, requirement) => {
+      if (requirement === EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4) return count % 4 === 0;
+      if (requirement === EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_5) return count % 5 === 0;
+      return true;
+    };
+
+    if (!validateDivisibility(effectiveCheckedIn.length, rules.divisibilityRequirement)) {
+      console.error('closeCheckInAndGenerateCourts: Player count does not meet divisibility requirement', {
+        count: effectiveCheckedIn.length,
+        requirement: rules.divisibilityRequirement
+      });
+      return false;
     }
+
+    const shuffle = (arr) => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
+
+    const getSortedByDupr = (checkedInIds) => {
+      const players = checkedInIds
+        .map(id => league.registeredPlayers.find(p => p.id === id))
+        .filter(Boolean);
+      if (players.length === 0) return checkedInIds;
+      return players.sort((a, b) => b.duprRating - a.duprRating).map(p => p.id);
+    };
+
+    const getSortedByPoints = (checkedInIds) => {
+      const players = checkedInIds
+        .map(id => league.registeredPlayers.find(p => p.id === id))
+        .filter(Boolean);
+      if (players.length === 0) return checkedInIds;
+      return players.sort((a, b) => {
+        if (b.cumulativePoints !== a.cumulativePoints) {
+          return b.cumulativePoints - a.cumulativePoints;
+        }
+        const winPctA = a.totalWins + a.totalLosses > 0 ? a.totalWins / (a.totalWins + a.totalLosses) : 0;
+        const winPctB = b.totalWins + b.totalLosses > 0 ? b.totalWins / (b.totalWins + b.totalLosses) : 0;
+        return winPctB - winPctA;
+      }).map(p => p.id);
+    };
+
+    const distributePlayersToCourts = (playerIds) => {
+      const courts = [[], [], [], []];
+      playerIds.forEach((playerId, index) => {
+        const courtIndex = 3 - Math.floor(index / playersPerCourt);
+        if (courtIndex >= 0) {
+          courts[courtIndex].push(playerId);
+        }
+      });
+      return courts;
+    };
 
     // Determine court assignments based on league mode (use effective list)
     let courtAssignments;
     try {
-      if (league.leagueMode === 'regular') {
-        courtAssignments = assignCourtsByRandom(effectiveCheckedIn);
+      const isDayOne = currentEventDay.dayNumber === 1;
+      const assignmentRule = isDayOne ? rules.initialAssignment : rules.startingMethod;
+
+      if (assignmentRule === EVENT_DAY_RULES.initialAssignment.DUPR_BASED) {
+        const sorted = getSortedByDupr(effectiveCheckedIn);
+        courtAssignments = distributePlayersToCourts(sorted);
+      } else if (
+        assignmentRule === EVENT_DAY_RULES.initialAssignment.POINTS_BASED ||
+        assignmentRule === EVENT_DAY_RULES.startingMethod.LADDER_POSITION
+      ) {
+        const sorted = getSortedByPoints(effectiveCheckedIn);
+        courtAssignments = distributePlayersToCourts(sorted);
+      } else if (assignmentRule === EVENT_DAY_RULES.initialAssignment.BLIND_DRAW || assignmentRule === EVENT_DAY_RULES.initialAssignment.RANDOM || assignmentRule === EVENT_DAY_RULES.startingMethod.BLIND_DRAW || assignmentRule === EVENT_DAY_RULES.startingMethod.RANDOM_START) {
+        const randomized = shuffle(effectiveCheckedIn);
+        courtAssignments = distributePlayersToCourts(randomized);
       } else {
-        if (currentEventDay.dayNumber === 1) {
-          courtAssignments = assignCourtsByDupr(
-            effectiveCheckedIn,
-            league.registeredPlayers
-          );
-        } else {
-          courtAssignments = assignCourtsByPoints(
-            effectiveCheckedIn,
-            league.registeredPlayers
-          );
-        }
+        courtAssignments = assignCourtsByRandom(effectiveCheckedIn);
       }
 
       // Validate court assignments
@@ -135,7 +214,10 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       leagueMode: league.leagueMode || 'regular',
       partners: league.partners || {},
       getPlayerGender,
-      partnerMatchups: league.partnerMatchups || []
+      partnerMatchups: league.partnerMatchups || [],
+      roundRobinType: rules.roundRobinType,
+      poolFormat: rules.poolFormat,
+      playersPerCourt
     });
 
     // Persist cleaned checkedInPlayers so it stays in sync with effective list
@@ -150,7 +232,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     });
 
     return true;
-  }, [currentEventDay, league.registeredPlayers, league.leagueMode, league.moneyRoundEnabled, updateEventDay, getPlayerById]);
+  }, [currentEventDay, league.registeredPlayers, league.leagueMode, league.moneyRoundEnabled, league.eventDayRules, updateEventDay, getPlayerById]);
 
   // Check if a specific round is complete (for mixed doubles and regular league)
   const checkRoundCompletion = useCallback((roundNumber) => {
@@ -253,14 +335,15 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
             currentEventDay.courtAssignments;
         }
 
-        // Calculate ladder movement: winners move up, losers move down
+        // Calculate ladder movement for this round
         const { movements } = calculateLadderMovement(
           currentCourtAssignments,
           currentRoundMatches,
           league.scoringSystem,
           {
             leagueMode: league.leagueMode || 'mixed_doubles',
-            partners: league.partners || {}
+            partners: league.partners || {},
+            ladderMovement: resolvedEventDayRules.ladderMovement
           }
         );
 
@@ -382,7 +465,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         updateEventDay(currentEventDay.id, {
           currentActiveRound: nextRoundNumber,
           postRound1CourtAssignments: newCourtAssignments, // Keep using this field to track current courts
-          schedule: [...updatedSchedule, ...nextRoundMatches]
+          schedule: [...updatedSchedule, ...nextRoundMatches],
+          ladderMovement: movements
         });
       }
     }
@@ -416,7 +500,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       league.scoringSystem,
       {
         leagueMode: 'regular',
-        partners: {}
+        partners: {},
+        ladderMovement: resolvedEventDayRules.ladderMovement
       }
     );
 
@@ -514,7 +599,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     updateEventDay(currentEventDay.id, {
       currentActiveRound: nextRoundNumber,
       postRound1CourtAssignments: newCourtAssignments,
-      schedule: [...currentEventDay.schedule, ...nextRoundMatches]
+      schedule: [...currentEventDay.schedule, ...nextRoundMatches],
+      ladderMovement: movements
     });
 
     return true;
@@ -561,7 +647,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       currentEventDay.schedule.every(m => m.status === 'completed');
   }, [currentEventDay]);
 
-  // Complete League Round (Phase 1) - calculates movement and optionally starts Money Round
+  // Complete League Round (Phase 1) - uses latest round movement and optionally starts Money Round
   const completeLeagueRound = useCallback(() => {
     if (!currentEventDay) return false;
     if (!allMatchesCompleted) return false;
@@ -570,16 +656,24 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     // Use postRound1CourtAssignments if available (for round-by-round modes)
     const courtAssignments = currentEventDay.postRound1CourtAssignments || currentEventDay.courtAssignments;
 
-    // Calculate ladder movement
-    const { movements, courtRankings } = calculateLadderMovement(
-      courtAssignments,
-      currentEventDay.schedule,
-      league.scoringSystem,
-      {
-        leagueMode: league.leagueMode || 'regular',
-        partners: league.partners || {}
-      }
-    );
+    let movements = currentEventDay.ladderMovement || [];
+    let courtRankings = [];
+    if (!movements.length) {
+      const maxRound = Math.max(...currentEventDay.schedule.map(m => m.roundNumber || 1));
+      const lastRoundMatches = currentEventDay.schedule.filter(m => m.roundNumber === maxRound);
+      const result = calculateLadderMovement(
+        courtAssignments,
+        lastRoundMatches,
+        league.scoringSystem,
+        {
+          leagueMode: league.leagueMode || 'regular',
+          partners: league.partners || {},
+          ladderMovement: resolvedEventDayRules.ladderMovement
+        }
+      );
+      movements = result.movements;
+      courtRankings = result.courtRankings;
+    }
 
     // Update player stats from League Round
     courtAssignments.forEach((courtPlayers, courtIndex) => {
@@ -618,6 +712,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     league.scoringSystem,
     league.leagueMode,
     league.partners,
+    resolvedEventDayRules.ladderMovement,
     updatePlayerStats,
     updateEventDay
   ]);
@@ -791,7 +886,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       league.scoringSystem,
       {
         leagueMode: league.leagueMode || 'regular',
-        partners: league.partners || {}
+        partners: league.partners || {},
+        ladderMovement: resolvedEventDayRules.ladderMovement
       }
     );
 
@@ -807,7 +903,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
         }))
       )
     };
-  }, [currentEventDay, allMatchesCompleted, league.scoringSystem, league.leagueMode, league.partners, getPlayerById]);
+  }, [currentEventDay, allMatchesCompleted, league.scoringSystem, league.leagueMode, league.partners, resolvedEventDayRules.ladderMovement, getPlayerById]);
 
   // Get unique rounds in schedule
   const rounds = useMemo(() => {

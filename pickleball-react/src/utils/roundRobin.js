@@ -529,7 +529,15 @@ export function generateMixedRounds(courtPlayers, partners, getPlayerGender, sta
  * @returns {Array} Array of all matches across all courts
  */
 export function generateEventDaySchedule(courtAssignments, options = {}) {
-  const { leagueMode, partners = {}, getPlayerGender = () => null, partnerMatchups = [] } = options;
+  const {
+    leagueMode,
+    partners = {},
+    getPlayerGender = () => null,
+    partnerMatchups = [],
+    roundRobinType = 'full_round_robin',
+    poolFormat = null,
+    playersPerCourt = null
+  } = options;
   const allMatches = [];
   let matchId = 1;
 
@@ -583,8 +591,16 @@ export function generateEventDaySchedule(courtAssignments, options = {}) {
     courtAssignments.forEach((courtPlayers, courtIndex) => {
       if (!courtPlayers || courtPlayers.length < 4) return;
 
+      const trimmedPlayers = playersPerCourt ? courtPlayers.slice(0, playersPerCourt) : courtPlayers;
+
       // Generate only Round 1 for regular league
-      const round1Schedule = generateRoundRobinSchedule(courtPlayers);
+      let round1Schedule = generateRoundRobinSchedule(trimmedPlayers);
+      if (roundRobinType === 'pool_play') {
+        round1Schedule = generateRoundRobinSchedule(trimmedPlayers);
+      } else if (roundRobinType === 'mix_and_split') {
+        round1Schedule = generateRoundRobinSchedule(trimmedPlayers);
+      }
+
       if (round1Schedule.length > 0) {
         const round1 = round1Schedule[0];
         allMatches.push({
