@@ -167,7 +167,13 @@ export function useAppState() {
 
   const addTournament = useCallback((name) => {
     setState(prev => {
-      const newId = generateTournamentId();
+      const existingMaxId = prev.tournaments.reduce((maxId, t) => {
+        const id = Number(t.id);
+        return Number.isFinite(id) ? Math.max(maxId, id) : maxId;
+      }, 0);
+      const counter = Number(prev.tournamentCounter);
+      const newId = Number.isFinite(counter) && counter > 0 ? counter : existingMaxId + 1;
+      const nextCounter = Math.max(existingMaxId + 1, newId + 1);
       const tournamentName = name || generateTournamentName(prev.tournaments);
       const reference = prev.tournaments.find(t => t.id === prev.activeTournamentId);
       const newTournament = createDefaultTournament({
@@ -177,11 +183,12 @@ export function useAppState() {
       });
       return {
         ...prev,
+        tournamentCounter: nextCounter,
         tournaments: [...prev.tournaments, newTournament],
         activeTournamentId: newId
       };
     });
-  }, [generateTournamentId]);
+  }, []);
 
   const removeTournament = useCallback((tournamentId) => {
     setState(prev => {
@@ -189,12 +196,16 @@ export function useAppState() {
         return prev; // Don't allow removing the last tournament
       }
       const removedId = Number(tournamentId);
-      const filtered = prev.tournaments.filter(t => t.id !== removedId);
+      if (!Number.isFinite(removedId)) {
+        return prev;
+      }
+      const filtered = prev.tournaments.filter(t => Number(t.id) !== removedId);
       let newActiveId = Number(prev.activeTournamentId);
       if (!Number.isFinite(newActiveId)) {
         newActiveId = null;
       }
-      if (newActiveId === removedId) {
+      const activeStillExists = filtered.some(t => Number(t.id) === newActiveId);
+      if (newActiveId === removedId || !activeStillExists) {
         newActiveId = filtered[0]?.id ?? null;
       }
       return {
