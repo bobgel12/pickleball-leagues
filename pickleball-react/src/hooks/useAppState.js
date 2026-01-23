@@ -128,7 +128,8 @@ export function useAppState() {
           activeTournamentId: firstTournament.id
         };
       }
-      if (!prev.tournaments.some(t => t.id === prev.activeTournamentId)) {
+      const currentActiveId = Number(prev.activeTournamentId);
+      if (!prev.tournaments.some(t => t.id === currentActiveId)) {
         return {
           ...prev,
           activeTournamentId: prev.tournaments[0].id
@@ -187,10 +188,14 @@ export function useAppState() {
       if (prev.tournaments.length <= 1) {
         return prev; // Don't allow removing the last tournament
       }
-      const filtered = prev.tournaments.filter(t => t.id !== tournamentId);
-      let newActiveId = prev.activeTournamentId;
-      if (newActiveId === tournamentId) {
-        newActiveId = filtered[0]?.id || null;
+      const removedId = Number(tournamentId);
+      const filtered = prev.tournaments.filter(t => t.id !== removedId);
+      let newActiveId = Number(prev.activeTournamentId);
+      if (!Number.isFinite(newActiveId)) {
+        newActiveId = null;
+      }
+      if (newActiveId === removedId) {
+        newActiveId = filtered[0]?.id ?? null;
       }
       return {
         ...prev,
@@ -215,7 +220,8 @@ export function useAppState() {
         console.warn('[useAppState] Tournament not found:', id, 'Available tournaments:', prev.tournaments.map(t => ({ id: t.id, name: t.name })));
         return prev;
       }
-      if (prev.activeTournamentId === id) {
+      const prevActiveId = Number(prev.activeTournamentId);
+      if (Number.isFinite(prevActiveId) && prevActiveId === id) {
         // Already active, no need to update
         console.log('[useAppState] Tournament already active:', id);
         return prev;

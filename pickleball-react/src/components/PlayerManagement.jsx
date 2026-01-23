@@ -47,7 +47,7 @@ export default function PlayerManagement({
 
   const scoringExplanations = {
     simple: "Simple: Basic win/loss points. Win +1, Loss -1. Easy to understand but doesn't consider court difficulty.",
-    court: "Court Weighted: Higher courts give more points. Court 1=1 pt, Court 2=2 pts, Court 3=3 pts, Court 4=4 pts. Losses do not deduct points.",
+    court: "Court Weighted: Higher courts give more points. Court 1=4 pts, Court 2=3 pts, Court 3=2 pts, Court 4=1 pt. Losses do not deduct points.",
     smart: "Smart Points: Considers court difficulty, opponent strength, and margin of victory. Most sophisticated system."
   };
 
@@ -95,7 +95,7 @@ export default function PlayerManagement({
           </button>
         </div>
         <div className="row muted">
-          <strong>DUPR Ratings:</strong> 2.000-8.000 (3 decimal places). <strong>Fair Seed Courts:</strong> Balanced teams across skill tiers. <strong>Gradual Start:</strong> Top 8 players start, others join later.
+          <strong>DUPR Ratings:</strong> 2.000-8.000 (3 decimal places). <strong>Fair Seed Courts:</strong> Balanced teams across skill tiers. <strong>Gradual Start:</strong> Top 8 players start on Courts 1-2, others join later.
         </div>
         <div className="row">
           <label className="muted">League match limit:</label>
@@ -124,7 +124,7 @@ export default function PlayerManagement({
             onChange={(e) => onSetScoringSystem(e.target.value)}
           >
             <option value="simple">Simple (Win +1, Loss -1)</option>
-            <option value="court">Court Weighted (Court 1=1 pt … Court 4=4 pts)</option>
+            <option value="court">Court Weighted (Court 1=4 pts … Court 4=1 pt)</option>
             <option value="smart">Smart Points (Court + Opponent + Margin)</option>
           </select>
           <span className="muted" style={{ fontSize: '11px', marginLeft: '8px' }}>
@@ -143,7 +143,7 @@ export default function PlayerManagement({
           <button
             className="btn"
             onClick={onGradualSeed}
-            title="Start with top 8 players on highest courts, others join as players are eliminated. Best for 16+ players or when you want to avoid overwhelming the system initially."
+            title="Start with top 8 players on highest courts (Courts 1-2), others join as players are eliminated. Best for 16+ players or when you want to avoid overwhelming the system initially."
           >
             <TrendingUp size={16} />
             Gradual Start
@@ -151,7 +151,7 @@ export default function PlayerManagement({
           <button
             className="btn"
             onClick={onClassicSeed}
-            title="Original seeding: Top 4 on Court 4, next 4 on Court 3, etc. Simple but may create unfair advantages with new scoring systems."
+            title="Original seeding: Top 4 on Court 1, next 4 on Court 2, etc. Simple but may create unfair advantages with new scoring systems."
           >
             <Trophy size={16} />
             Classic Seed

@@ -334,7 +334,7 @@ function App() {
     tournament.clearLastPartners();
     const remaining = appState.currentTournament.players.length - 8;
     if (remaining > 0) {
-      toast.info(`Gradual Start: Top 8 players on Courts 3-4. ${remaining} players will join as others are eliminated or after initial matches.`, { duration: 8000 });
+      toast.info(`Gradual Start: Top 8 players on Courts 1-2. ${remaining} players will join as others are eliminated or after initial matches.`, { duration: 8000 });
     }
   }, [appState, tournament]);
 
@@ -490,9 +490,10 @@ function App() {
       }
 
       const scoringSystem = appState.currentTournament.scoringSystem || 'simple';
+      const scoringCourtIndex = 3 - result.courtIndex;
       const awards = calculateMatchAwards({
         system: scoringSystem,
-        courtIndex: result.courtIndex,
+        courtIndex: scoringCourtIndex,
         winner: result.winner,
         scoreA: result.scoreA,
         scoreB: result.scoreB,
@@ -517,27 +518,46 @@ function App() {
       });
     });
 
+    // Build a local partner map so we can split teams immediately
+    const localLastPartners = { ...(currentTournament.lastPartners || {}) };
+    const setLocalPartners = (team) => {
+      if (team.length === 2) {
+        const [a, b] = team;
+        localLastPartners[a] = b;
+        localLastPartners[b] = a;
+      }
+    };
+    roundResults.forEach(result => {
+      const court = currentTournament.courts[result.courtIndex] || [];
+      const A = court.slice(0, 2);
+      const B = court.slice(2, 4);
+      const winners = (result.winner === 'A') ? A : B;
+      const losers = (result.winner === 'A') ? B : A;
+      setLocalPartners(winners);
+      setLocalPartners(losers);
+    });
+
     // Process court movements
     const incomingWinners = [[], [], [], []];
     const incomingLosers = [[], [], [], []];
     const stayingPlayers = currentTournament.courts.map(c => c.slice());
-    const reversedMatches = currentTournament.matches.slice().reverse();
+    const resultsByCourt = new Map(roundResults.map(result => [result.courtIndex, result]));
 
     for (let courtIndex = 0; courtIndex < 4; courtIndex++) {
       const court = currentTournament.courts[courtIndex] || [];
       if (court.length < 4) continue;
 
-      const recentMatch = reversedMatches.find(m => m.court === courtIndex + 1);
-      if (!recentMatch) continue;
+      const recentResult = resultsByCourt.get(courtIndex);
+      if (!recentResult) continue;
 
-      const matchPlayers = [...recentMatch.A, ...recentMatch.B];
+      const matchPlayers = [...recentResult.A, ...recentResult.B];
       stayingPlayers[courtIndex] = stayingPlayers[courtIndex].filter(id => !matchPlayers.includes(id));
 
-      const winners = (recentMatch.winner === 'A') ? recentMatch.A.slice() : recentMatch.B.slice();
-      const losers = (recentMatch.winner === 'A') ? recentMatch.B.slice() : recentMatch.A.slice();
+      const winners = (recentResult.winner === 'A') ? recentResult.A.slice() : recentResult.B.slice();
+      const losers = (recentResult.winner === 'A') ? recentResult.B.slice() : recentResult.A.slice();
 
-      const upTarget = courtIndex < 3 ? courtIndex + 1 : courtIndex;
-      const downTarget = courtIndex > 0 ? courtIndex - 1 : courtIndex;
+      const upTarget = courtIndex > 0 ? courtIndex - 1 : courtIndex;
+      const downTarget = courtIndex < 3 ? courtIndex + 1 : courtIndex;
 
       if (upTarget === courtIndex) {
         incomingWinners[courtIndex].push(...winners);
@@ -561,8 +581,9 @@ function App() {
       ];
     }
 
+    const getLocalLastPartner = (playerId) => localLastPartners[playerId] ?? null;
     tournament.setCourts(
-      nextCourts.map(court => arrangeCourtTeams(court, tournament.getLastPartner))
+      nextCourts.map(court => arrangeCourtTeams(court, getLocalLastPartner))
     );
 
     // Only clear submitted courts and pending scores after successful processing

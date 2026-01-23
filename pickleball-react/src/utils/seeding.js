@@ -147,20 +147,20 @@ export function initialSeedCourts(tournament, getPlayerById, setLastPartner, cle
 
   if (validPlayers.length <= 4) {
     const players = validPlayers.slice(0, 4);
-    addToCourt(c4, players.map(p => p.id).filter(id => id != null));
+    addToCourt(c1, players.map(p => p.id).filter(id => id != null));
   } else if (validPlayers.length <= 8) {
     const topHalf = validPlayers.slice(0, Math.ceil(validPlayers.length / 2));
     const bottomHalf = validPlayers.slice(Math.ceil(validPlayers.length / 2));
-    addToCourt(c4, topHalf.map(p => p.id).filter(id => id != null));
-    addToCourt(c3, bottomHalf.map(p => p.id).filter(id => id != null));
+    addToCourt(c1, topHalf.map(p => p.id).filter(id => id != null));
+    addToCourt(c2, bottomHalf.map(p => p.id).filter(id => id != null));
   } else if (validPlayers.length <= 12) {
     const third = Math.ceil(validPlayers.length / 3);
     const topThird = validPlayers.slice(0, third);
     const midThird = validPlayers.slice(third, third * 2);
     const bottomThird = validPlayers.slice(third * 2);
-    addToCourt(c4, topThird.map(p => p.id).filter(id => id != null));
-    addToCourt(c3, midThird.map(p => p.id).filter(id => id != null));
-    addToCourt(c2, bottomThird.map(p => p.id).filter(id => id != null));
+    addToCourt(c1, topThird.map(p => p.id).filter(id => id != null));
+    addToCourt(c2, midThird.map(p => p.id).filter(id => id != null));
+    addToCourt(c3, bottomThird.map(p => p.id).filter(id => id != null));
   } else {
     // For 13+ players, distribute evenly across 4 courts
     // Use floor division to ensure we don't exceed total players
@@ -175,10 +175,10 @@ export function initialSeedCourts(tournament, getPlayerById, setLastPartner, cle
       index += count;
       
       const playerIds = courtPlayers.map(p => p.id).filter(id => id != null);
-      if (i === 0) addToCourt(c4, playerIds);
-      else if (i === 1) addToCourt(c3, playerIds);
-      else if (i === 2) addToCourt(c2, playerIds);
-      else addToCourt(c1, playerIds);
+      if (i === 0) addToCourt(c1, playerIds);
+      else if (i === 1) addToCourt(c2, playerIds);
+      else if (i === 2) addToCourt(c3, playerIds);
+      else addToCourt(c4, playerIds);
     }
   }
 
@@ -337,14 +337,14 @@ export function gradualSeedCourts(tournament, getPlayerById, setLastPartner, cle
   const remaining = sorted.slice(8);
   const c1 = [], c2 = [], c3 = [], c4 = [];
 
-  const court4Players = top8.slice(0, 4);
-  c4.push(...court4Players.map(p => p.id));
-  const court3Players = top8.slice(4, 8);
-  c3.push(...court3Players.map(p => p.id));
-  const court2Players = remaining.slice(0, 4);
-  const court1Players = remaining.slice(4, 8);
-  c2.push(...court2Players.map(p => p.id));
+  const court1Players = top8.slice(0, 4);
   c1.push(...court1Players.map(p => p.id));
+  const court2Players = top8.slice(4, 8);
+  c2.push(...court2Players.map(p => p.id));
+  const court3Players = remaining.slice(0, 4);
+  const court4Players = remaining.slice(4, 8);
+  c3.push(...court3Players.map(p => p.id));
+  c4.push(...court4Players.map(p => p.id));
 
   const balanceTeams = (court) => {
     if (court.length < 4) return court;
@@ -365,10 +365,10 @@ export function classicSeedCourts(tournament, shuffle, arrangeCourtTeams) {
   const sorted = tournament.players.slice().sort((a, b) => b.seed - a.seed || a.name.localeCompare(b.name));
   const c1 = [], c2 = [], c3 = [], c4 = [];
   sorted.forEach((p, i) => {
-    if (i < 4) c4.push(p.id);
-    else if (i < 8) c3.push(p.id);
-    else if (i < 12) c2.push(p.id);
-    else c1.push(p.id);
+    if (i < 4) c1.push(p.id);
+    else if (i < 8) c2.push(p.id);
+    else if (i < 12) c3.push(p.id);
+    else c4.push(p.id);
   });
   return [shuffle(c1), shuffle(c2), shuffle(c3), shuffle(c4)].map(court => arrangeCourtTeams(court));
 }

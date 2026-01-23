@@ -36,7 +36,7 @@ export default function Help() {
               <strong>Simple Scoring:</strong> Win +1, Loss -1. Perfect for casual leagues. Easy to understand and track. No court difficulty consideration.
             </div>
             <div style={{ marginBottom: '15px', padding: '10px', background: '#f8faff', borderRadius: '8px', borderLeft: '3px solid #155ee7' }}>
-              <strong>Court Weighted:</strong> Higher courts give more points. Court 1=1 pt, Court 2=2 pts, Court 3=3 pts, Court 4=4 pts. Losses do not deduct points.
+              <strong>Court Weighted:</strong> Higher courts give more points. Court 1=4 pts, Court 2=3 pts, Court 3=2 pts, Court 4=1 pt. Losses do not deduct points.
             </div>
             <div style={{ marginBottom: '15px', padding: '10px', background: '#f8faff', borderRadius: '8px', borderLeft: '3px solid #155ee7' }}>
               <strong>Smart Points:</strong> Most sophisticated system. Considers court difficulty, opponent strength, and margin of victory. Base 10 points + bonuses.
@@ -48,15 +48,15 @@ export default function Help() {
             <div style={{ marginBottom: '15px', padding: '10px', background: '#f0f8ff', borderRadius: '8px', borderLeft: '3px solid #155ee7' }}>
               <strong>Fair Seed Courts (Recommended):</strong><br />
               • Adapts to any group size (1-20+ players)<br />
-              • 1-4 players: All on Court 4<br />
-              • 5-8 players: Split across Courts 3-4<br />
-              • 9-12 players: Use Courts 2-4<br />
+              • 1-4 players: All on Court 1<br />
+              • 5-8 players: Split across Courts 1-2<br />
+              • 9-12 players: Use Courts 1-3<br />
               • 13+ players: Use all 4 courts<br />
               • Balanced teams within each court
             </div>
             <div style={{ marginBottom: '15px', padding: '10px', background: '#f0f8ff', borderRadius: '8px', borderLeft: '3px solid #155ee7' }}>
               <strong>Gradual Start:</strong><br />
-              • Starts with top 8 players on highest courts<br />
+              • Starts with top 8 players on highest courts (Courts 1-2)<br />
               • Others join as players are eliminated<br />
               • Prevents system overwhelm with large groups<br />
               • Perfect for 16+ player tournaments
@@ -64,7 +64,7 @@ export default function Help() {
             <div style={{ marginBottom: '15px', padding: '10px', background: '#f0f8ff', borderRadius: '8px', borderLeft: '3px solid #155ee7' }}>
               <strong>Classic Seed:</strong><br />
               • Original simple seeding method<br />
-              • Top 4 on Court 4, next 4 on Court 3, etc.<br />
+              • Top 4 on Court 1, next 4 on Court 2, etc.<br />
               • Familiar to existing users<br />
               • Good for consistent skill levels
             </div>

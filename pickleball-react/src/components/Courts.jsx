@@ -202,10 +202,10 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
         {tournament.courts.map((court, idx) => {
           const courtNo = idx + 1;
           const courtLabels = {
-            1: { label: 'Lowest', icon: Award, color: 'var(--text-secondary)' },
+            1: { label: 'Highest', icon: Trophy, color: 'var(--warning)' },
             2: { label: '', icon: Award, color: 'var(--text-secondary)' },
             3: { label: '', icon: Award, color: 'var(--text-secondary)' },
-            4: { label: 'Highest', icon: Trophy, color: 'var(--warning)' }
+            4: { label: 'Lowest', icon: Award, color: 'var(--text-secondary)' }
           };
           const courtInfo = courtLabels[courtNo] || { label: '', icon: Award, color: 'var(--text-secondary)' };
           const Icon = courtInfo.icon;
