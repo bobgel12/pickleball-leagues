@@ -105,7 +105,16 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       return 4;
     };
 
-    const playersPerCourt = getPlayersPerCourt(effectiveCheckedIn.length, rules.poolFormat);
+    let playersPerCourt = getPlayersPerCourt(effectiveCheckedIn.length, rules.poolFormat);
+    if (rules.poolFormat === EVENT_DAY_RULES.poolFormat.POOLS_OF_5 &&
+        effectiveCheckedIn.length % 4 === 0 &&
+        effectiveCheckedIn.length % 5 !== 0) {
+      console.warn('closeCheckInAndGenerateCourts: Falling back to 4-player courts for this event day', {
+        count: effectiveCheckedIn.length,
+        poolFormat: rules.poolFormat
+      });
+      playersPerCourt = 4;
+    }
 
     const validateDivisibility = (count, requirement) => {
       if (requirement === EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4) return count % 4 === 0;
@@ -153,10 +162,10 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       }).map(p => p.id);
     };
 
-    const distributePlayersToCourts = (playerIds) => {
+    const distributePlayersToCourtsWithSize = (playerIds, perCourt) => {
       const courts = [[], [], [], []];
       playerIds.forEach((playerId, index) => {
-        const courtIndex = 3 - Math.floor(index / playersPerCourt);
+        const courtIndex = 3 - Math.floor(index / perCourt);
         if (courtIndex >= 0) {
           courts[courtIndex].push(playerId);
         }
@@ -164,27 +173,31 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       return courts;
     };
 
+    const distributePlayersToCourts = (playerIds) => {
+      return distributePlayersToCourtsWithSize(playerIds, playersPerCourt);
+    };
+
     // Determine court assignments based on league mode (use effective list)
     let courtAssignments;
     try {
       const isDayOne = currentEventDay.dayNumber === 1;
       const assignmentRule = isDayOne ? rules.initialAssignment : rules.startingMethod;
+      let orderedPlayers = null;
 
       if (assignmentRule === EVENT_DAY_RULES.initialAssignment.DUPR_BASED) {
-        const sorted = getSortedByDupr(effectiveCheckedIn);
-        courtAssignments = distributePlayersToCourts(sorted);
+        orderedPlayers = getSortedByDupr(effectiveCheckedIn);
       } else if (
         assignmentRule === EVENT_DAY_RULES.initialAssignment.POINTS_BASED ||
         assignmentRule === EVENT_DAY_RULES.startingMethod.LADDER_POSITION
       ) {
-        const sorted = getSortedByPoints(effectiveCheckedIn);
-        courtAssignments = distributePlayersToCourts(sorted);
+        orderedPlayers = getSortedByPoints(effectiveCheckedIn);
       } else if (assignmentRule === EVENT_DAY_RULES.initialAssignment.BLIND_DRAW || assignmentRule === EVENT_DAY_RULES.initialAssignment.RANDOM || assignmentRule === EVENT_DAY_RULES.startingMethod.BLIND_DRAW || assignmentRule === EVENT_DAY_RULES.startingMethod.RANDOM_START) {
-        const randomized = shuffle(effectiveCheckedIn);
-        courtAssignments = distributePlayersToCourts(randomized);
+        orderedPlayers = shuffle(effectiveCheckedIn);
       } else {
-        courtAssignments = assignCourtsByRandom(effectiveCheckedIn);
+        orderedPlayers = shuffle(effectiveCheckedIn);
       }
+
+      courtAssignments = distributePlayersToCourts(orderedPlayers);
 
       // Validate court assignments
       if (!courtAssignments || !Array.isArray(courtAssignments) || courtAssignments.length !== 4) {
@@ -199,6 +212,16 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
           courtAssignments
         });
         return false;
+      }
+
+      const hasEmptyCourt = courtAssignments.some(court => court.length === 0);
+      if (hasEmptyCourt && effectiveCheckedIn.length >= 16) {
+        const fallbackAssignments = distributePlayersToCourtsWithSize(orderedPlayers, 4);
+        const fallbackHasEmptyCourt = fallbackAssignments.some(court => court.length === 0);
+        if (!fallbackHasEmptyCourt) {
+          courtAssignments = fallbackAssignments;
+          playersPerCourt = 4;
+        }
       }
     } catch (error) {
       console.error('closeCheckInAndGenerateCourts: Error generating court assignments', error);

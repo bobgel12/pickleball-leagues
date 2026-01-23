@@ -120,9 +120,9 @@ Climb the ladder with us at Pickleball 706!`,
     eventDayRules: {
       initialAssignment: EVENT_DAY_RULES.initialAssignment.DUPR_BASED,
       ladderMovement: EVENT_DAY_RULES.ladderMovement.STANDARD_LADDER,
-      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_5,
+      poolFormat: EVENT_DAY_RULES.poolFormat.POOLS_OF_4_OR_5,
       startingMethod: EVENT_DAY_RULES.startingMethod.LADDER_POSITION,
-      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.DIVISIBLE_BY_4,
+      divisibilityRequirement: EVENT_DAY_RULES.divisibilityRequirement.FLEXIBLE,
       roundRobinType: EVENT_DAY_RULES.roundRobinType.FULL_ROUND_ROBIN
     }
   },
