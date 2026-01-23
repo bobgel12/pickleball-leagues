@@ -81,49 +81,8 @@ export default function LeagueCheckIn({
           <span style={{ color: 'var(--warning)', marginLeft: '8px' }}> (counts may not match)</span>
         )}
       </div>
-      {/* Available Players - left */}
-      <div className="checkin-column checkin-column--available">
-        <h3>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Users size={18} />
-            Available Players
-          </span>
-          <span className="count-badge">{availableForCheckIn.length}</span>
-        </h3>
-        
-        <div className="checkin-list">
-          {availableForCheckIn
-            .sort((a, b) => b.duprRating - a.duprRating)
-            .map(player => (
-              <div
-                key={player.id}
-                className="checkin-player"
-                onClick={() => handleCheckIn(player.id)}
-                style={{ opacity: canCheckIn ? 1 : 0.5, cursor: canCheckIn ? 'pointer' : 'not-allowed' }}
-              >
-                <div>
-                  <div style={{ fontWeight: 500 }}>{player.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    DUPR: {player.duprRating.toFixed(3)}
-                    {player.eventDaysAttended > 0 && (
-                      <> · {player.cumulativePoints} pts</>
-                    )}
-                  </div>
-                </div>
-                <ArrowRight size={16} style={{ color: 'var(--text-secondary)' }} />
-              </div>
-            ))}
-          
-          {availableForCheckIn.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
-              All registered players have checked in
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Checked In Players - right */}
-      <div className="checkin-column checkin-column--checkedin">
+      <div className="checkin-column checkin-column--checkedin" style={{ order: 2 }}>
         <h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <UserCheck size={18} />
@@ -182,6 +141,47 @@ export default function LeagueCheckIn({
                   ? `Regular ladder league requires a multiple of 4 players (currently: ${checkedInCount})`
                   : 'Cannot close check-in'}
             </p>
+          )}
+        </div>
+      </div>
+
+      {/* Available Players - left */}
+      <div className="checkin-column checkin-column--available" style={{ order: 1 }}>
+        <h3>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Users size={18} />
+            Available Players
+          </span>
+          <span className="count-badge">{availableForCheckIn.length}</span>
+        </h3>
+        
+        <div className="checkin-list">
+          {availableForCheckIn
+            .sort((a, b) => b.duprRating - a.duprRating)
+            .map(player => (
+              <div
+                key={player.id}
+                className="checkin-player"
+                onClick={() => handleCheckIn(player.id)}
+                style={{ opacity: canCheckIn ? 1 : 0.5, cursor: canCheckIn ? 'pointer' : 'not-allowed' }}
+              >
+                <div>
+                  <div style={{ fontWeight: 500 }}>{player.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    DUPR: {player.duprRating.toFixed(3)}
+                    {player.eventDaysAttended > 0 && (
+                      <> · {player.cumulativePoints} pts</>
+                    )}
+                  </div>
+                </div>
+                <ArrowRight size={16} style={{ color: 'var(--text-secondary)' }} />
+              </div>
+            ))}
+          
+          {availableForCheckIn.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
+              All registered players have checked in
+            </div>
           )}
         </div>
       </div>
