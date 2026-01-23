@@ -405,6 +405,125 @@ export async function loadLeagueData(leagueId = null) {
 }
 
 /**
+ * Fetch matches for a league
+ * @param {string} leagueId - League UUID
+ * @param {Object} options - Filters: eventDayId, status, isMoneyRound
+ * @returns {Object} { matches, playerMap }
+ */
+export async function fetchMatches(leagueId, options = {}) {
+  const clubSlug = getClubSlug();
+  if (!clubSlug) {
+    console.warn('No club selected, cannot fetch matches');
+    return { matches: [], playerMap: {} };
+  }
+
+  if (!leagueId) {
+    throw new Error('leagueId is required to fetch matches');
+  }
+
+  if (!checkOnline()) {
+    console.warn('Offline - cannot fetch matches');
+    return { matches: [], playerMap: {} };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const params = new URLSearchParams();
+    params.set('leagueId', leagueId);
+    if (options.eventDayId !== undefined) params.set('eventDayId', options.eventDayId);
+    if (options.status) params.set('status', options.status);
+    if (options.isMoneyRound !== undefined) params.set('isMoneyRound', String(options.isMoneyRound));
+
+    const response = await fetch(`${getApiBase()}/${clubSlug}/matches?${params.toString()}`, {
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch matches: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Request timeout fetching matches');
+    } else {
+      console.error('Error fetching matches:', error);
+    }
+    return { matches: [], playerMap: {} };
+  }
+}
+
+/**
+ * Sync a completed match to the database
+ * @param {Object} match - Match object
+ * @param {string} leagueId - League UUID
+ * @param {string|number} eventDayId - Event day ID
+ * @param {boolean} isMoneyRound - Whether the match is from money round
+ */
+export async function syncMatchToDatabase(match, leagueId, eventDayId, isMoneyRound = false) {
+  const clubSlug = getClubSlug();
+  if (!clubSlug) {
+    console.warn('No club selected, cannot sync match');
+    return { success: false, error: 'No club selected' };
+  }
+
+  if (!leagueId) {
+    console.warn('No leagueId provided, cannot sync match');
+    return { success: false, error: 'No leagueId provided' };
+  }
+
+  if (!checkOnline()) {
+    console.warn('Offline - queuing match for sync');
+    try {
+      const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
+      pending.push({
+        type: 'match',
+        clubSlug,
+        leagueId,
+        eventDayId,
+        match,
+        isMoneyRound,
+        timestamp: Date.now()
+      });
+      localStorage.setItem('pickleball_pending_sync', JSON.stringify(pending));
+      return { success: true, offline: true };
+    } catch (e) {
+      console.error('Failed to queue match for sync:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  try {
+    const response = await fetch(`${getApiBase()}/${clubSlug}/matches`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        leagueId,
+        eventDayId,
+        match,
+        isMoneyRound
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to sync match: ${response.statusText}`);
+    }
+
+    return { success: true, offline: false };
+  } catch (error) {
+    console.error('Error syncing match:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Load all leagues for the current club (metadata only)
  * @returns {Array} Array of league metadata objects
  */

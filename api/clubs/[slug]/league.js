@@ -264,6 +264,50 @@ async function verifyAdminAccess(slug, masterKey) {
   }
 }
 
+/**
+ * Sync a completed match to the matches table
+ */
+async function syncMatchToDatabase(supabase, leagueDataId, eventDayId, match, isMoneyRound = false) {
+  if (!match || !leagueDataId || eventDayId == null) {
+    return;
+  }
+
+  const status = match.status || 'pending';
+  const payload = {
+    league_id: leagueDataId,
+    event_day_id: String(eventDayId),
+    match_id: String(match.id ?? ''),
+    court_index: Number.isFinite(match.courtIndex) ? match.courtIndex : null,
+    round_number: Number.isFinite(match.roundNumber) ? match.roundNumber : null,
+    team_a: Array.isArray(match.teamA) ? match.teamA : [],
+    team_b: Array.isArray(match.teamB) ? match.teamB : [],
+    score_a: Number.isFinite(match.scoreA) ? match.scoreA : null,
+    score_b: Number.isFinite(match.scoreB) ? match.scoreB : null,
+    winner: match.winner === 'A' || match.winner === 'B' ? match.winner : null,
+    status,
+    is_money_round: Boolean(isMoneyRound),
+    sitting_out: match.sittingOut ?? null,
+    played_with_partner: Boolean(match.playedWithPartner),
+    completed_at: status === 'completed' ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supabase
+    .from('matches')
+    .upsert(payload, {
+      onConflict: 'league_id,event_day_id,match_id'
+    });
+
+  if (error) {
+    console.error('syncMatchToDatabase: Error upserting match', {
+      leagueDataId,
+      eventDayId,
+      matchId: match.id,
+      error
+    });
+  }
+}
+
 export default async function handler(req, res) {
   // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
@@ -884,6 +928,7 @@ export default async function handler(req, res) {
       const updates = {
         updated_at: new Date().toISOString()
       };
+      let mergedLeagueDataForSync = null;
 
       if (leagueData !== undefined) {
         // Parse if body.data was double-encoded as string (use new var: leagueData is const from destructuring)
@@ -934,6 +979,7 @@ export default async function handler(req, res) {
         });
         
         updates.data = mergedLeagueData;
+        mergedLeagueDataForSync = mergedLeagueData;
         
         // Sync players to normalized tables if registeredPlayers exists in mergedLeagueData
         // Use mergedLeagueData instead of leagueData to ensure we sync all players (not just incoming)
@@ -986,6 +1032,35 @@ export default async function handler(req, res) {
 
       if (error) {
         throw error;
+      }
+
+      // Sync completed matches to normalized matches table
+      if (mergedLeagueDataForSync?.eventDays && Array.isArray(mergedLeagueDataForSync.eventDays)) {
+        try {
+          let matchCount = 0;
+          for (const day of mergedLeagueDataForSync.eventDays) {
+            const eventDayId = day?.id;
+            const scheduleMatches = Array.isArray(day?.schedule) ? day.schedule : [];
+            const moneyRoundMatches = Array.isArray(day?.moneyRoundSchedule) ? day.moneyRoundSchedule : [];
+
+            for (const match of scheduleMatches) {
+              if (match?.status === 'completed') {
+                matchCount += 1;
+                await syncMatchToDatabase(supabase, existingLeague.id, eventDayId, match, false);
+              }
+            }
+
+            for (const match of moneyRoundMatches) {
+              if (match?.status === 'completed') {
+                matchCount += 1;
+                await syncMatchToDatabase(supabase, existingLeague.id, eventDayId, match, true);
+              }
+            }
+          }
+          console.log(`PUT: Synced ${matchCount} completed matches for league ${existingLeague.league_id}`);
+        } catch (syncError) {
+          console.error('PUT: Error syncing matches during league update:', syncError);
+        }
       }
 
       // Reload players from normalized tables for response

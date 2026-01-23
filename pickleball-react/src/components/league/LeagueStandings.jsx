@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Trophy, Award, Filter, 
   TrendingUp, Crown, ArrowUpDown, DollarSign, CheckCircle, XCircle
 } from 'lucide-react';
 import { LEAGUE_STATUS } from '../../utils/constants.js';
+import { fetchMatches } from '../../utils/apiStorage.js';
 
 export default function LeagueStandings({
   league,
@@ -19,9 +20,35 @@ export default function LeagueStandings({
   const [sortBy, setSortBy] = useState('points');
   const [filterMinGames, setFilterMinGames] = useState(0);
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+  const [remoteMatches, setRemoteMatches] = useState(null);
+  const [remotePlayerMap, setRemotePlayerMap] = useState({});
 
   const isChampion = pointsLeader && winPercentageLeader && 
     pointsLeader.id === winPercentageLeader.id;
+
+  useEffect(() => {
+    let isMounted = true;
+    const leagueId = league?.leagueId || league?.league_id;
+    if (!leagueId) return () => {};
+
+    fetchMatches(leagueId, { status: 'completed' })
+      .then(result => {
+        if (!isMounted) return;
+        const matches = Array.isArray(result?.matches) ? result.matches : [];
+        setRemoteMatches(matches);
+        setRemotePlayerMap(result?.playerMap || {});
+      })
+      .catch(error => {
+        if (!isMounted) return;
+        console.error('Failed to load match history from database:', error);
+        setRemoteMatches(null);
+        setRemotePlayerMap({});
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [league?.leagueId, league?.league_id]);
 
   // Sort standings based on selected criteria
   const sortedStandings = [...standings]
@@ -50,10 +77,20 @@ export default function LeagueStandings({
 
   // Extract match history by player from all event days
   const playerMatchHistory = useMemo(() => {
-    if (!league || !league.eventDays || !getPlayerById) return {};
+    if (!league) return {};
     
     const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
     const historyByPlayer = {};
+    const eventDayNumberMap = new Map();
+    const hasRemoteMatches = Array.isArray(remoteMatches) && remoteMatches.length > 0;
+
+    if (Array.isArray(league.eventDays)) {
+      league.eventDays.forEach(eventDay => {
+        if (eventDay?.id != null) {
+          eventDayNumberMap.set(String(eventDay.id), eventDay.dayNumber);
+        }
+      });
+    }
     
     // Build mapping from numeric IDs to UUIDs (for legacy matches with numeric IDs when players have UUIDs)
     // Per-court, per-day: get 4 players with matching courtHistory, sort by id; map court[position] -> sortedPlayers[position]
@@ -91,67 +128,104 @@ export default function LeagueStandings({
       }
     }
     
-    // Iterate through all event days
-    league.eventDays.forEach(eventDay => {
-      const schedule = eventDay.schedule || [];
-      const hasMR = Array.isArray(eventDay.moneyRoundSchedule) && eventDay.moneyRoundSchedule.length > 0;
-      if (schedule.length === 0 && !hasMR) return;
+    const processMatch = (match, context) => {
+      const { eventDayId, dayNumber, isMoneyRound } = context;
+      const allPlayers = [...(match.teamA || []), ...(match.teamB || [])];
+      allPlayers.forEach(playerId => {
+        const normalizedId = typeof playerId === 'string' && playerId.includes('-')
+          ? playerId
+          : (typeof playerId === 'string' ? parseInt(playerId, 10) : playerId);
+        const lookupId = (typeof normalizedId === 'number' && !isNaN(normalizedId) && numericIdToPlayerIdMap.has(normalizedId))
+          ? numericIdToPlayerIdMap.get(normalizedId)
+          : normalizedId;
+        if (!lookupId) return;
+        const keyId = String(lookupId);
+        if (!historyByPlayer[keyId]) historyByPlayer[keyId] = [];
+        const playerTeam = (match.teamA || []).some(id => idsEqual(id, playerId)) ? 'A' : 'B';
+        const teammates = (playerTeam === 'A' ? match.teamA || [] : match.teamB || []).filter(id => {
+          const teammateId = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
+          const mapped = (typeof teammateId === 'number' && !isNaN(teammateId) && numericIdToPlayerIdMap.has(teammateId))
+            ? numericIdToPlayerIdMap.get(teammateId) : teammateId;
+          return mapped && !idsEqual(mapped, lookupId);
+        });
+        const opponents = (playerTeam === 'A' ? match.teamB || [] : match.teamA || []).map(id => {
+          const o = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
+          return (typeof o === 'number' && !isNaN(o) && numericIdToPlayerIdMap.has(o)) ? numericIdToPlayerIdMap.get(o) : o;
+        });
+        const won = match.winner === playerTeam;
+        historyByPlayer[keyId].push({
+          eventDayId,
+          dayNumber,
+          matchId: match.id,
+          courtIndex: match.courtIndex || 0,
+          roundNumber: match.roundNumber || 1,
+          playerTeam,
+          teammates,
+          opponents,
+          scoreA: match.scoreA,
+          scoreB: match.scoreB,
+          winner: match.winner,
+          won,
+          playerScore: playerTeam === 'A' ? match.scoreA : match.scoreB,
+          opponentScore: playerTeam === 'A' ? match.scoreB : match.scoreA,
+          isMoneyRound
+        });
+      });
+    };
 
-      const completedMatches = schedule.filter(m => m.status === 'completed');
-      
-      const processMatch = (match, isMoneyRound = false) => {
-        const allPlayers = [...(match.teamA || []), ...(match.teamB || [])];
-        allPlayers.forEach(playerId => {
-          const normalizedId = typeof playerId === 'string' && playerId.includes('-')
-            ? playerId
-            : (typeof playerId === 'string' ? parseInt(playerId, 10) : playerId);
-          const lookupId = (typeof normalizedId === 'number' && !isNaN(normalizedId) && numericIdToPlayerIdMap.has(normalizedId))
-            ? numericIdToPlayerIdMap.get(normalizedId)
-            : normalizedId;
-          if (!lookupId) return;
-          const keyId = String(lookupId);
-          if (!historyByPlayer[keyId]) historyByPlayer[keyId] = [];
-          const playerTeam = (match.teamA || []).some(id => idsEqual(id, playerId)) ? 'A' : 'B';
-          const teammates = (playerTeam === 'A' ? match.teamA || [] : match.teamB || []).filter(id => {
-            const teammateId = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
-            const mapped = (typeof teammateId === 'number' && !isNaN(teammateId) && numericIdToPlayerIdMap.has(teammateId))
-              ? numericIdToPlayerIdMap.get(teammateId) : teammateId;
-            return mapped && !idsEqual(mapped, lookupId);
-          });
-          const opponents = (playerTeam === 'A' ? match.teamB || [] : match.teamA || []).map(id => {
-            const o = typeof id === 'string' && id.includes('-') ? id : (typeof id === 'string' ? parseInt(id, 10) : id);
-            return (typeof o === 'number' && !isNaN(o) && numericIdToPlayerIdMap.has(o)) ? numericIdToPlayerIdMap.get(o) : o;
-          });
-          const won = match.winner === playerTeam;
-          historyByPlayer[keyId].push({
+    if (hasRemoteMatches) {
+      remoteMatches.forEach(match => {
+        const normalized = {
+          id: match.match_id ?? match.matchId ?? match.id,
+          teamA: match.team_a ?? match.teamA ?? [],
+          teamB: match.team_b ?? match.teamB ?? [],
+          scoreA: match.score_a ?? match.scoreA,
+          scoreB: match.score_b ?? match.scoreB,
+          winner: match.winner,
+          roundNumber: match.round_number ?? match.roundNumber,
+          courtIndex: match.court_index ?? match.courtIndex ?? 0,
+          status: match.status
+        };
+        if (normalized.status !== 'completed') return;
+        const eventDayId = match.event_day_id;
+        const dayNumber = eventDayNumberMap.get(String(eventDayId)) || 0;
+        processMatch(normalized, {
+          eventDayId,
+          dayNumber,
+          isMoneyRound: Boolean(match.is_money_round)
+        });
+      });
+    } else if (Array.isArray(league.eventDays)) {
+      // Iterate through all event days
+      league.eventDays.forEach(eventDay => {
+        const schedule = eventDay.schedule || [];
+        const hasMR = Array.isArray(eventDay.moneyRoundSchedule) && eventDay.moneyRoundSchedule.length > 0;
+        if (schedule.length === 0 && !hasMR) return;
+
+        const completedMatches = schedule.filter(m => m.status === 'completed');
+
+        completedMatches.forEach(match => {
+          processMatch(match, {
             eventDayId: eventDay.id,
             dayNumber: eventDay.dayNumber,
-            matchId: match.id,
-            courtIndex: match.courtIndex || 0,
-            roundNumber: match.roundNumber || 1,
-            playerTeam,
-            teammates,
-            opponents,
-            scoreA: match.scoreA,
-            scoreB: match.scoreB,
-            winner: match.winner,
-            won,
-            playerScore: playerTeam === 'A' ? match.scoreA : match.scoreB,
-            opponentScore: playerTeam === 'A' ? match.scoreB : match.scoreA,
-            isMoneyRound
+            isMoneyRound: false
           });
         });
-      };
 
-      completedMatches.forEach(m => processMatch(m, false));
-
-      // Money Round: include completed matches from moneyRoundSchedule
-      const mrSchedule = eventDay.moneyRoundSchedule;
-      if (Array.isArray(mrSchedule) && mrSchedule.length > 0) {
-        const completedMR = mrSchedule.filter(m => m.status === 'completed');
-        completedMR.forEach(m => processMatch(m, true));
-      }
-    });
+        // Money Round: include completed matches from moneyRoundSchedule
+        const mrSchedule = eventDay.moneyRoundSchedule;
+        if (Array.isArray(mrSchedule) && mrSchedule.length > 0) {
+          const completedMR = mrSchedule.filter(m => m.status === 'completed');
+          completedMR.forEach(match => {
+            processMatch(match, {
+              eventDayId: eventDay.id,
+              dayNumber: eventDay.dayNumber,
+              isMoneyRound: true
+            });
+          });
+        }
+      });
+    }
     
     // Sort matches by event day and round (most recent first); matchId can be numeric or string (e.g. mr-1-2)
     Object.keys(historyByPlayer).forEach(playerId => {
@@ -163,7 +237,11 @@ export default function LeagueStandings({
     });
     
     return historyByPlayer;
-  }, [league, getPlayerById]);
+  }, [league, remoteMatches]);
+
+  const getPlayerByIdSafe = useMemo(() => {
+    return (id) => getPlayerById?.(id) || remotePlayerMap[String(id)] || null;
+  }, [getPlayerById, remotePlayerMap]);
 
   // Money Round standings
   const moneyRoundStandings = useMemo(() => {
@@ -432,13 +510,13 @@ export default function LeagueStandings({
                               <tbody>
                                 {matches.map((match, idx) => {
                                   const teammateNames = match.teammates
-                                    .map(id => getPlayerById && getPlayerById(id))
+                                    .map(id => getPlayerByIdSafe(id))
                                     .filter(Boolean)
                                     .map(p => p.name)
                                     .join(', ') || 'None';
                                   
                                   const opponentNames = match.opponents
-                                    .map(id => getPlayerById && getPlayerById(id))
+                                    .map(id => getPlayerByIdSafe(id))
                                     .filter(Boolean)
                                     .map(p => p.name)
                                     .join(', ');

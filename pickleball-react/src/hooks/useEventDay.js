@@ -25,6 +25,7 @@ import {
   getMoneyRoundProgress,
   isMoneyRoundComplete
 } from '../utils/moneyRound.js';
+import { syncMatchToDatabase } from '../utils/apiStorage.js';
 
 const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
 
@@ -307,15 +308,22 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     }
 
     // Update the match
+    const updatedMatch = { ...match, scoreA, scoreB, winner, status: 'completed' };
     const updatedSchedule = currentEventDay.schedule.map(m =>
-      m.id === matchId
-        ? { ...m, scoreA, scoreB, winner, status: 'completed' }
-        : m
+      m.id === matchId ? updatedMatch : m
     );
 
     updateEventDay(currentEventDay.id, {
       schedule: updatedSchedule
     });
+
+    if (updatedMatch.status === 'completed') {
+      const leagueId = league?.leagueId || league?.league_id;
+      void syncMatchToDatabase(updatedMatch, leagueId, currentEventDay.id, false)
+        .catch(error => {
+          console.error('recordMatchScore: Failed to sync match to database:', error);
+        });
+    }
 
     // For mixed doubles, check if current active round is complete after this score
     // For regular league, movement will be triggered manually via submitRound()
@@ -780,18 +788,28 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     if (!currentEventDay) return false;
     if (currentEventDay.phase !== EVENT_DAY_PHASE.MONEY_ROUND) return false;
 
+    const match = currentEventDay.moneyRoundSchedule.find(m => m.id === matchId);
+    if (!match) return false;
+
     const winner = scoreA > scoreB ? 'A' : 'B';
 
+    const updatedMatch = { ...match, scoreA, scoreB, winner, status: 'completed' };
     updateEventDay(currentEventDay.id, {
       moneyRoundSchedule: currentEventDay.moneyRoundSchedule.map(match =>
-        match.id === matchId
-          ? { ...match, scoreA, scoreB, winner, status: 'completed' }
-          : match
+        match.id === matchId ? updatedMatch : match
       )
     });
 
+    if (updatedMatch.status === 'completed') {
+      const leagueId = league?.leagueId || league?.league_id;
+      void syncMatchToDatabase(updatedMatch, leagueId, currentEventDay.id, true)
+        .catch(error => {
+          console.error('recordMoneyRoundScore: Failed to sync match to database:', error);
+        });
+    }
+
     return true;
-  }, [currentEventDay, updateEventDay]);
+  }, [currentEventDay, updateEventDay, league]);
 
   // Clear a Money Round match score
   const clearMoneyRoundScore = useCallback((matchId) => {
