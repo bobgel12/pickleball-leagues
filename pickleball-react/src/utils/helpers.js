@@ -7,7 +7,8 @@ export function createDefaultState() {
     tournaments: [],
     activeTournamentId: null,
     playerCounter: 1,
-    tournamentCounter: 1
+    tournamentCounter: 1,
+    _meta: {}
   };
 }
 
@@ -215,6 +216,10 @@ export function normalizeStateStructure(raw) {
 
   if (!normalized.activeTournamentId || !normalized.tournaments.some(t => t.id === normalized.activeTournamentId)) {
     normalized.activeTournamentId = normalized.tournaments[0].id;
+  }
+
+  if (raw._meta && typeof raw._meta === "object") {
+    normalized._meta = { ...raw._meta };
   }
 
   return normalized;

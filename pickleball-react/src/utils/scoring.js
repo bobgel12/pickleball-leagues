@@ -195,12 +195,18 @@ export function applyAwards(awards, getPlayerById, setPlayerPoints) {
 }
 
 export function recalculatePointsFromMatches(tournament, getPlayerById, setPlayerPoints) {
-  // Reset all points
-  tournament.players.forEach(p => setPlayerPoints(p.id, 0));
-  
   if (!Array.isArray(tournament.matches)) return;
+
+  const totals = {};
+  tournament.players.forEach(p => {
+    totals[p.id] = 0;
+  });
+
   const ordered = tournament.matches.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
   ordered.forEach(match => {
+    if (!Array.isArray(match.A) || !Array.isArray(match.B) || match.A.length < 2 || match.B.length < 2) {
+      return;
+    }
     const system = match.system || tournament.scoringSystem || "simple";
     const courtIndex = (match.court || 1) - 1;
     let awards = match.awards;
@@ -218,7 +224,17 @@ export function recalculatePointsFromMatches(tournament, getPlayerById, setPlaye
       // and will be updated when the tournament state changes
       match.awards = awards;
     }
-    applyAwards(awards, getPlayerById, setPlayerPoints);
+    Object.entries(awards).forEach(([idStr, delta]) => {
+      const id = Number(idStr);
+      if (!Number.isFinite(id)) return;
+      totals[id] = (totals[id] ?? 0) + delta;
+    });
+  });
+
+  Object.entries(totals).forEach(([idStr, total]) => {
+    const id = Number(idStr);
+    if (!Number.isFinite(id)) return;
+    setPlayerPoints(id, Math.max(0, Math.round(total * 1000) / 1000));
   });
   // Note: matchesPlayed is updated through addMatch, so we don't need to set it here
 }

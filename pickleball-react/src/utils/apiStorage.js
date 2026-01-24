@@ -74,6 +74,56 @@ function getClubSlug() {
          null;
 }
 
+function safeLoadLocalTournament() {
+  try {
+    const stored = localStorage.getItem('pickleball_tournament_state');
+    return stored ? JSON.parse(stored) : null;
+  } catch (e) {
+    console.error('Failed to load from localStorage:', e);
+    return null;
+  }
+}
+
+function getDataUpdatedAt(data) {
+  if (!data || typeof data !== 'object') return 0;
+  const ts = data._meta?.updatedAt;
+  const num = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function summarizeTournamentData(data) {
+  if (!data || typeof data !== 'object') return { tournaments: 0, players: 0, matches: 0 };
+  const tournaments = Array.isArray(data.tournaments) ? data.tournaments : [];
+  const players = tournaments.reduce((sum, t) => sum + (Array.isArray(t.players) ? t.players.length : 0), 0);
+  const matches = tournaments.reduce((sum, t) => sum + (Array.isArray(t.matches) ? t.matches.length : 0), 0);
+  return { tournaments: tournaments.length, players, matches };
+}
+
+function getPendingTournamentData(clubSlug) {
+  if (!clubSlug) return null;
+  try {
+    const pending = JSON.parse(localStorage.getItem('pickleball_pending_sync') || '[]');
+    const entry = pending
+      .filter(p => p?.type === 'tournament' && p?.clubSlug === clubSlug && p?.data)
+      .sort((a, b) => (getDataUpdatedAt(b.data) || b.timestamp || 0) - (getDataUpdatedAt(a.data) || a.timestamp || 0))[0];
+    return entry?.data || null;
+  } catch (e) {
+    console.error('Failed to read pending sync:', e);
+    return null;
+  }
+}
+
+function pickNewestTournamentData(candidates) {
+  let selected = { source: null, data: null, updatedAt: 0 };
+  candidates.forEach(({ source, data }) => {
+    const updatedAt = getDataUpdatedAt(data);
+    if (data && updatedAt >= selected.updatedAt) {
+      selected = { source, data, updatedAt };
+    }
+  });
+  return selected;
+}
+
 /**
  * Save tournament data to API
  */
@@ -153,27 +203,23 @@ export async function saveTournamentData(data) {
  */
 export async function loadTournamentData() {
   const clubSlug = getClubSlug();
+  const localData = safeLoadLocalTournament();
+  const pendingData = getPendingTournamentData(clubSlug);
   if (!clubSlug) {
-    // Fallback to localStorage for backward compatibility
-    try {
-      const stored = localStorage.getItem('pickleball_tournament_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
-    }
+    return localData;
   }
 
   // If offline, try localStorage first
   if (!checkOnline()) {
     console.warn('Offline - loading from localStorage');
-    try {
-      const stored = localStorage.getItem('pickleball_tournament_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
+    const selected = pickNewestTournamentData([
+      { source: 'pending', data: pendingData },
+      { source: 'local', data: localData }
+    ]);
+    if (selected.data) {
+      console.log('[API] Using offline', selected.source, summarizeTournamentData(selected.data));
     }
+    return selected.data;
   }
 
   try {
@@ -200,15 +246,23 @@ export async function loadTournamentData() {
     }
 
     const { data } = await response.json();
-    
-    // Also save to localStorage as cache
-    try {
-      localStorage.setItem('pickleball_tournament_state', JSON.stringify(data));
-    } catch (e) {
-      // Ignore localStorage errors
+    const selected = pickNewestTournamentData([
+      { source: 'pending', data: pendingData },
+      { source: 'local', data: localData },
+      { source: 'api', data }
+    ]);
+    if (selected.data) {
+      try {
+        localStorage.setItem('pickleball_tournament_state', JSON.stringify(selected.data));
+      } catch (e) {
+        // Ignore localStorage errors
+      }
+      console.log('[API] Using', selected.source, summarizeTournamentData(selected.data));
     }
-
-    return data;
+    if (selected.source !== 'api' && selected.data) {
+      saveTournamentData(selected.data).catch(() => {});
+    }
+    return selected.data;
   } catch (error) {
     if (error.name === 'AbortError') {
       console.warn('Request timeout - loading from localStorage');
@@ -216,13 +270,14 @@ export async function loadTournamentData() {
       console.error('Error loading tournament data:', error);
     }
     // Fallback to localStorage
-    try {
-      const stored = localStorage.getItem('pickleball_tournament_state');
-      return stored ? JSON.parse(stored) : null;
-    } catch (e) {
-      console.error('Failed to load from localStorage:', e);
-      return null;
+    const selected = pickNewestTournamentData([
+      { source: 'pending', data: pendingData },
+      { source: 'local', data: localData }
+    ]);
+    if (selected.data) {
+      console.log('[API] Using fallback', selected.source, summarizeTournamentData(selected.data));
     }
+    return selected.data;
   }
 }
 

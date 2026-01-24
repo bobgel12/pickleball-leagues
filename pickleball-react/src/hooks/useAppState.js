@@ -98,13 +98,21 @@ export function useAppState() {
       clearTimeout(saveTimeoutRef.current);
     }
 
+    const payload = {
+      ...state,
+      _meta: {
+        ...(state._meta && typeof state._meta === 'object' ? state._meta : {}),
+        updatedAt: Date.now()
+      }
+    };
+
     // Save to localStorage immediately (fallback)
-    Storage.save(state);
+    Storage.save(payload);
 
     // Debounce API save to avoid too many requests
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        await saveTournamentData(state);
+        await saveTournamentData(payload);
       } catch (error) {
         console.error('Error saving tournament data to API:', error);
         // localStorage already saved as fallback
