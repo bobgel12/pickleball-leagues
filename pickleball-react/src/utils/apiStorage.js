@@ -246,6 +246,27 @@ export async function loadTournamentData() {
     }
 
     const { data } = await response.json();
+    
+    // Debug logging for player count issue
+    if (data) {
+      const tournaments = Array.isArray(data.tournaments) 
+        ? data.tournaments 
+        : (data.players ? [data] : []);
+      
+      tournaments.forEach((t, idx) => {
+        const playerCount = Array.isArray(t.players) ? t.players.length : 0;
+        console.log(`[loadTournamentData] API returned tournament ${idx}: ${playerCount} players`);
+        if (playerCount > 0 && playerCount < 16) {
+          console.warn(`[loadTournamentData] WARNING: Tournament ${idx} has ${playerCount} players, expected 16`);
+          console.log(`[loadTournamentData] Tournament structure:`, {
+            hasPlayers: 'players' in t,
+            playersIsArray: Array.isArray(t.players),
+            samplePlayer: t.players?.[0]
+          });
+        }
+      });
+    }
+    
     const selected = pickNewestTournamentData([
       { source: 'pending', data: pendingData },
       { source: 'local', data: localData },
@@ -258,6 +279,16 @@ export async function loadTournamentData() {
         // Ignore localStorage errors
       }
       console.log('[API] Using', selected.source, summarizeTournamentData(selected.data));
+      
+      // Additional debug logging
+      if (selected.source === 'api') {
+        const tournaments = Array.isArray(selected.data.tournaments) 
+          ? selected.data.tournaments 
+          : (selected.data.players ? [selected.data] : []);
+        tournaments.forEach((t, idx) => {
+          console.log(`[loadTournamentData] Selected tournament ${idx} has ${Array.isArray(t.players) ? t.players.length : 0} players`);
+        });
+      }
     }
     if (selected.source !== 'api' && selected.data) {
       saveTournamentData(selected.data).catch(() => {});

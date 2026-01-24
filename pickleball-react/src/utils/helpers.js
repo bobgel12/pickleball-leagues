@@ -43,17 +43,86 @@ export function normalizeTournament(raw) {
     tournament.scoringSystem = raw.scoringSystem.trim();
   }
 
-  const players = Array.isArray(raw.players) ? raw.players.map(player => {
-    if (!player || typeof player !== "object") return null;
-    const id = Number(player.id ?? player.playerId);
-    if (!Number.isFinite(id) || id <= 0) return null;
-    const name = String(player.name ?? `Player ${id}`).trim() || `Player ${id}`;
-    const seedNum = Number(player.seed);
-    const seed = Number.isFinite(seedNum) ? Math.max(2.000, Math.min(8.000, Math.round(seedNum * 1000) / 1000)) : 4.500;
-    const pointsNum = Number(player.points);
-    const points = Number.isFinite(pointsNum) ? Math.max(0, Math.round(pointsNum * 1000) / 1000) : 0;
-    return { id, name, seed, points };
-  }).filter(Boolean) : [];
+  // Handle players array - be more defensive about the data structure
+  let players = [];
+  if (Array.isArray(raw.players)) {
+    console.log(`[normalizeTournament] Processing ${raw.players.length} players from input`);
+    players = raw.players.map((player, index) => {
+      if (!player || typeof player !== "object") {
+        console.warn(`[normalizeTournament] Invalid player object at index ${index}:`, player);
+        return null;
+      }
+      
+      // Try multiple ways to get the ID
+      let id = null;
+      if (player.id != null) {
+        id = Number(player.id);
+      } else if (player.playerId != null) {
+        id = Number(player.playerId);
+      } else if (index >= 0) {
+        // Last resort: use index + 1 if no ID found (shouldn't happen normally)
+        console.warn(`[normalizeTournament] Player at index ${index} has no ID, using index-based ID:`, player);
+        id = index + 1;
+      }
+      
+      if (!Number.isFinite(id) || id <= 0) {
+        console.warn(`[normalizeTournament] Invalid player ID at index ${index}:`, {
+          id: player.id,
+          playerId: player.playerId,
+          computedId: id,
+          player: player
+        });
+        return null;
+      }
+      
+      const name = String(player.name ?? `Player ${id}`).trim() || `Player ${id}`;
+      const seedNum = Number(player.seed);
+      const seed = Number.isFinite(seedNum) ? Math.max(2.000, Math.min(8.000, Math.round(seedNum * 1000) / 1000)) : 4.500;
+      const pointsNum = Number(player.points);
+      const points = Number.isFinite(pointsNum) ? Math.max(0, Math.round(pointsNum * 1000) / 1000) : 0;
+      return { id, name, seed, points };
+    }).filter(Boolean);
+    
+    console.log(`[normalizeTournament] Successfully normalized ${players.length} players from ${raw.players.length} input players`);
+  } else if (raw.players && typeof raw.players === "object") {
+    // Handle case where players might be an object instead of array
+    console.warn('[normalizeTournament] Players is an object, not an array. Attempting to convert:', raw.players);
+    const playersObj = raw.players;
+    players = Object.values(playersObj)
+      .filter(p => p && typeof p === "object")
+      .map((player, index) => {
+        const id = Number(player.id ?? player.playerId ?? (index + 1));
+        if (!Number.isFinite(id) || id <= 0) return null;
+        const name = String(player.name ?? `Player ${id}`).trim() || `Player ${id}`;
+        const seedNum = Number(player.seed);
+        const seed = Number.isFinite(seedNum) ? Math.max(2.000, Math.min(8.000, Math.round(seedNum * 1000) / 1000)) : 4.500;
+        const pointsNum = Number(player.points);
+        const points = Number.isFinite(pointsNum) ? Math.max(0, Math.round(pointsNum * 1000) / 1000) : 0;
+        return { id, name, seed, points };
+      })
+      .filter(Boolean);
+  }
+  
+  // Debug logging if players are being filtered out
+  if (Array.isArray(raw.players) && raw.players.length > players.length) {
+    console.warn(`[normalizeTournament] WARNING: Filtered out ${raw.players.length - players.length} players. Input: ${raw.players.length}, Output: ${players.length}`);
+    const filtered = raw.players.filter((p, idx) => {
+      if (!p || typeof p !== "object") return true;
+      const id = Number(p.id ?? p.playerId);
+      return !Number.isFinite(id) || id <= 0;
+    });
+    if (filtered.length > 0) {
+      console.warn('[normalizeTournament] Filtered players:', filtered.slice(0, 5).map(p => ({
+        hasId: 'id' in (p || {}),
+        hasPlayerId: 'playerId' in (p || {}),
+        id: p?.id,
+        playerId: p?.playerId,
+        type: typeof p?.id,
+        isValid: Number.isFinite(Number(p?.id ?? p?.playerId)) && Number(p?.id ?? p?.playerId) > 0
+      })));
+    }
+  }
+  
   tournament.players = players;
   
   // Load pending scores if they exist
@@ -142,7 +211,19 @@ export function normalizeStateStructure(raw) {
   const normalized = createDefaultState();
   if (!raw || typeof raw !== "object") return normalized;
 
+  // Debug logging
+  console.log('[normalizeStateStructure] Input data structure:', {
+    hasTournaments: 'tournaments' in raw,
+    tournamentsIsArray: Array.isArray(raw.tournaments),
+    tournamentsLength: Array.isArray(raw.tournaments) ? raw.tournaments.length : 'N/A',
+    hasPlayers: 'players' in raw,
+    playersIsArray: Array.isArray(raw.players),
+    playersLength: Array.isArray(raw.players) ? raw.players.length : 'N/A',
+    keys: Object.keys(raw)
+  });
+
   if (Array.isArray(raw.tournaments)) {
+    console.log(`[normalizeStateStructure] Processing ${raw.tournaments.length} tournaments from tournaments array`);
     normalized.tournaments = raw.tournaments.map(t => normalizeTournament(t)).filter(Boolean);
     const activeId = Number(raw.activeTournamentId);
     normalized.activeTournamentId = Number.isFinite(activeId) && activeId > 0 ? activeId : null;
@@ -154,13 +235,18 @@ export function normalizeStateStructure(raw) {
     if (Number.isFinite(tournamentCounter) && tournamentCounter > 0) {
       normalized.tournamentCounter = Math.floor(tournamentCounter);
     }
-  } else {
+  } else if (Array.isArray(raw.players) || raw.id || raw.name) {
+    // Treat as single tournament object
+    console.log('[normalizeStateStructure] Treating input as single tournament object');
     const single = normalizeTournament(raw);
     if (!Number.isFinite(single.id) || single.id <= 0) {
       single.id = 1;
     }
     normalized.tournaments.push(single);
     normalized.activeTournamentId = single.id;
+    console.log(`[normalizeStateStructure] Normalized single tournament with ${single.players.length} players`);
+  } else {
+    console.warn('[normalizeStateStructure] Unknown data structure, using default state');
   }
 
   if (normalized.tournaments.length === 0) {

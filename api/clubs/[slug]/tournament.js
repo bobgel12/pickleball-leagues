@@ -60,7 +60,29 @@ export default async function handler(req, res) {
         throw error;
       }
 
-      return res.status(200).json({ data: data?.data || null });
+      const tournamentData = data?.data || null;
+      
+      // Debug logging to help diagnose player retrieval issues
+      if (tournamentData) {
+        const tournaments = Array.isArray(tournamentData.tournaments) 
+          ? tournamentData.tournaments 
+          : (tournamentData.players ? [tournamentData] : []);
+        
+        tournaments.forEach((t, idx) => {
+          const playerCount = Array.isArray(t.players) ? t.players.length : 0;
+          console.log(`[Tournament API] Tournament ${idx}: ${playerCount} players found`);
+          if (playerCount > 0 && playerCount < 16) {
+            console.log(`[Tournament API] WARNING: Expected 16 players but found ${playerCount}`);
+            console.log(`[Tournament API] Sample players:`, t.players.slice(0, 3).map(p => ({ 
+              id: p?.id, 
+              playerId: p?.playerId, 
+              name: p?.name 
+            })));
+          }
+        });
+      }
+
+      return res.status(200).json({ data: tournamentData });
     }
 
     if (req.method === 'POST' || req.method === 'PUT') {
@@ -69,6 +91,23 @@ export default async function handler(req, res) {
       if (!tournamentData || typeof tournamentData !== 'object') {
         return res.status(400).json({ error: 'Invalid tournament data' });
       }
+
+      // Debug logging to see what's being saved
+      const tournaments = Array.isArray(tournamentData.tournaments) 
+        ? tournamentData.tournaments 
+        : (tournamentData.players ? [tournamentData] : []);
+      
+      tournaments.forEach((t, idx) => {
+        const playerCount = Array.isArray(t.players) ? t.players.length : 0;
+        console.log(`[Tournament API] Saving tournament ${idx}: ${playerCount} players`);
+        if (playerCount > 0) {
+          console.log(`[Tournament API] Sample players being saved:`, t.players.slice(0, 3).map(p => ({ 
+            id: p?.id, 
+            playerId: p?.playerId, 
+            name: p?.name 
+          })));
+        }
+      });
 
       // Upsert tournament data
       const { data, error } = await supabase
@@ -86,6 +125,16 @@ export default async function handler(req, res) {
       if (error) {
         throw error;
       }
+
+      // Verify what was actually saved
+      const savedTournaments = Array.isArray(data.data?.tournaments) 
+        ? data.data.tournaments 
+        : (data.data?.players ? [data.data] : []);
+      
+      savedTournaments.forEach((t, idx) => {
+        const playerCount = Array.isArray(t.players) ? t.players.length : 0;
+        console.log(`[Tournament API] Verified saved tournament ${idx}: ${playerCount} players in database`);
+      });
 
       return res.status(200).json({ 
         success: true,
