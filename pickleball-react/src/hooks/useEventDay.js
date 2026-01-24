@@ -366,6 +366,25 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
             currentEventDay.courtAssignments;
         }
 
+        // Save snapshot before processing (for revert functionality)
+        const snapshot = {
+          currentActiveRound: currentActiveRound,
+          courtAssignments: currentCourtAssignments.map(c => c.slice()),
+          schedule: updatedSchedule.map(m => ({ ...m })),
+          playerStats: league.registeredPlayers.map(p => ({
+            id: p.id,
+            cumulativePoints: p.cumulativePoints || 0,
+            totalWins: p.totalWins || 0,
+            totalLosses: p.totalLosses || 0,
+            pointsScored: p.pointsScored || 0,
+            pointsAllowed: p.pointsAllowed || 0,
+            eventDaysAttended: p.eventDaysAttended || 0,
+            courtHistory: p.courtHistory ? [...p.courtHistory] : [],
+            ladderPositionHistory: p.ladderPositionHistory ? [...p.ladderPositionHistory] : []
+          })),
+          timestamp: Date.now()
+        };
+
         // Calculate ladder movement for this round
         const { movements } = calculateLadderMovement(
           currentCourtAssignments,
@@ -497,7 +516,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
           currentActiveRound: nextRoundNumber,
           postRound1CourtAssignments: newCourtAssignments, // Keep using this field to track current courts
           schedule: [...updatedSchedule, ...nextRoundMatches],
-          ladderMovement: movements
+          ladderMovement: movements,
+          lastRoundSnapshot: snapshot // Store snapshot for revert
         });
       }
     }
@@ -523,6 +543,25 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     // Get current court assignments (may have changed from previous rounds)
     const currentCourtAssignments = currentEventDay.postRound1CourtAssignments || 
                                    currentEventDay.courtAssignments;
+    
+    // Save snapshot before processing (for revert functionality)
+    const snapshot = {
+      currentActiveRound: currentActiveRound,
+      courtAssignments: currentCourtAssignments.map(c => c.slice()),
+      schedule: currentEventDay.schedule.map(m => ({ ...m })),
+      playerStats: league.registeredPlayers.map(p => ({
+        id: p.id,
+        cumulativePoints: p.cumulativePoints || 0,
+        totalWins: p.totalWins || 0,
+        totalLosses: p.totalLosses || 0,
+        pointsScored: p.pointsScored || 0,
+        pointsAllowed: p.pointsAllowed || 0,
+        eventDaysAttended: p.eventDaysAttended || 0,
+        courtHistory: p.courtHistory ? [...p.courtHistory] : [],
+        ladderPositionHistory: p.ladderPositionHistory ? [...p.ladderPositionHistory] : []
+      })),
+      timestamp: Date.now()
+    };
     
     // Calculate ladder movement based on ONLY this round's matches
     const { movements } = calculateLadderMovement(
@@ -631,7 +670,8 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       currentActiveRound: nextRoundNumber,
       postRound1CourtAssignments: newCourtAssignments,
       schedule: [...currentEventDay.schedule, ...nextRoundMatches],
-      ladderMovement: movements
+      ladderMovement: movements,
+      lastRoundSnapshot: snapshot // Store snapshot for revert
     });
 
     return true;
@@ -981,6 +1021,41 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     return currentEventDay.moneyRoundSchedule.filter(m => m.courtIndex === courtIndex);
   }, [currentEventDay]);
 
+  // Revert last submitted round
+  const revertRound = useCallback(() => {
+    if (!currentEventDay) return false;
+    if (currentEventDay.status !== EVENT_DAY_STATUS.ACTIVE) return false;
+    
+    const snapshot = currentEventDay.lastRoundSnapshot;
+    if (!snapshot) {
+      return false; // No snapshot to revert
+    }
+
+    // Restore court assignments
+    updateEventDay(currentEventDay.id, {
+      currentActiveRound: snapshot.currentActiveRound,
+      postRound1CourtAssignments: snapshot.courtAssignments.map(c => c.slice()),
+      schedule: snapshot.schedule.map(m => ({ ...m })),
+      lastRoundSnapshot: null // Clear snapshot after revert
+    });
+
+    // Restore player stats
+    snapshot.playerStats.forEach(playerStat => {
+      updatePlayerStats(playerStat.id, {
+        points: playerStat.cumulativePoints,
+        wins: playerStat.totalWins,
+        losses: playerStat.totalLosses,
+        pointsScored: playerStat.pointsScored,
+        pointsAllowed: playerStat.pointsAllowed,
+        eventDaysAttended: playerStat.eventDaysAttended,
+        courtHistory: playerStat.courtHistory,
+        ladderPositionHistory: playerStat.ladderPositionHistory
+      });
+    });
+
+    return true;
+  }, [currentEventDay, updateEventDay, updatePlayerStats]);
+
   // Get current phase display name
   const currentPhase = useMemo(() => {
     if (!currentEventDay) return null;
@@ -1012,6 +1087,7 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     // Regular League Round Submission
     isCurrentRoundComplete,
     submitRound,
+    revertRound,
 
     // Actions
     checkInPlayer,

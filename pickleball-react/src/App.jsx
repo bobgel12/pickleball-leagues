@@ -472,6 +472,16 @@ function App() {
       return false;
     }
 
+    // Save snapshot before processing (for revert functionality)
+    const snapshot = {
+      courts: currentTournament.courts.map(c => c.slice()),
+      matches: currentTournament.matches.slice(),
+      lastPartners: { ...(currentTournament.lastPartners || {}) },
+      players: currentTournament.players.map(p => ({ ...p })),
+      matchesPlayed: currentTournament.matchesPlayed || 0,
+      timestamp: Date.now()
+    };
+
     // Process all matches
     roundResults.forEach(result => {
       const court = currentTournament.courts[result.courtIndex] || [];
@@ -592,12 +602,62 @@ function App() {
       ...t,
       tournamentStarted: true,
       submittedCourts: [],
-      pendingScores: ['', '', '', '']
+      pendingScores: ['', '', '', ''],
+      lastRoundSnapshot: snapshot // Store snapshot for revert
     }));
     
     toast.success('Round submitted successfully!', { title: 'Round Complete' });
     return true; // Return true to indicate success
   }, [appState, tournament, toast]);
+
+  const handleRevertRound = useCallback(async () => {
+    if (!appState.currentTournament) return false;
+    const currentTournament = appState.currentTournament;
+    const snapshot = currentTournament.lastRoundSnapshot;
+
+    if (!snapshot) {
+      toast.warning('No recent round to revert.', { title: 'Revert Round' });
+      return false;
+    }
+
+    const confirmed = await confirmDialog.showConfirm({
+      title: 'Revert Last Round',
+      message: 'Are you sure you want to revert the last submitted round? This will undo all matches, court movements, and point changes from that round.',
+      confirmText: 'Revert',
+      cancelText: 'Cancel',
+      variant: 'warning'
+    });
+
+    if (!confirmed) return false;
+
+    // Restore from snapshot
+    appState.updateTournament(currentTournament.id, (t) => {
+      // Restore courts
+      tournament.setCourts(snapshot.courts.map(c => c.slice()));
+      
+      // Restore matches
+      const restoredTournament = {
+        ...t,
+        matches: snapshot.matches.slice(),
+        matchesPlayed: snapshot.matchesPlayed,
+        lastPartners: { ...snapshot.lastPartners },
+        lastRoundSnapshot: null // Clear snapshot after revert
+      };
+
+      // Restore player points
+      snapshot.players.forEach(player => {
+        tournament.setPlayerPoints(player.id, player.points);
+      });
+
+      return restoredTournament;
+    });
+
+    // Recalculate points from remaining matches
+    tournament.recalculatePoints();
+
+    toast.success('Last round reverted successfully!', { title: 'Round Reverted' });
+    return true;
+  }, [appState, tournament, toast, confirmDialog]);
 
   const handleAdjustSeed = useCallback((playerId, delta) => {
     const player = tournament.getPlayerById(playerId);
@@ -856,6 +916,7 @@ function App() {
             toast={toast}
             isCurrentRoundComplete={eventDay.isCurrentRoundComplete}
             onSubmitRound={eventDay.submitRound}
+            onRevertRound={eventDay.revertRound}
             onFinishAndContinue={handleFinishAndContinue}
           />
         );
@@ -993,6 +1054,7 @@ function App() {
             getPlayerById={tournament.getPlayerById}
             onSubmitRound={handleSubmitRound}
             onSubmitCourt={handleSubmitCourt}
+            onRevertRound={handleRevertRound}
             updateTournament={appState.updateTournament}
             toast={toast}
           />

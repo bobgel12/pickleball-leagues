@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowLeft, Calendar, Users, Play, CheckCircle2,
-  ArrowUp, ArrowDown, Minus, Target, Send
+  ArrowUp, ArrowDown, Minus, Target, Send, Undo2
 } from 'lucide-react';
 import { EVENT_DAY_STATUS } from '../../utils/constants.js';
 import LeagueCheckIn from './LeagueCheckIn.jsx';
@@ -28,6 +28,7 @@ export default function EventDayManager({
   toast,
   isCurrentRoundComplete,
   onSubmitRound,
+  onRevertRound,
   onFinishAndContinue
 }) {
   const [showMovementPreview, setShowMovementPreview] = useState(false);
@@ -265,6 +266,35 @@ export default function EventDayManager({
                     <Send size={18} style={{ marginRight: '8px' }} />
                     Submit Round
                   </button>
+                  {currentEventDay.lastRoundSnapshot && onRevertRound && (
+                    <button 
+                      className="btn" 
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          'Are you sure you want to revert the last submitted round?\n\n' +
+                          'This will undo all matches, court movements, and point changes from that round.'
+                        );
+                        if (confirmed) {
+                          const success = onRevertRound();
+                          if (success) {
+                            if (toast) toast.success('Last round reverted successfully!');
+                          } else {
+                            if (toast) toast.error('Failed to revert round.');
+                          }
+                        }
+                      }}
+                      style={{ 
+                        padding: '12px 24px', 
+                        fontSize: '15px',
+                        borderColor: 'var(--warning)',
+                        color: 'var(--warning)'
+                      }}
+                      title="Revert the last submitted round"
+                    >
+                      <Undo2 size={18} style={{ marginRight: '8px' }} />
+                      Revert Last Round
+                    </button>
+                  )}
                   <button 
                     className="btn" 
                     onClick={handleCloseEventDay}

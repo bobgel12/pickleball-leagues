@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { parseScore } from '../utils/csvParser.js';
-import { CheckCircle2, Edit, Send, Trophy, Award } from 'lucide-react';
+import { CheckCircle2, Edit, Send, Trophy, Award, Undo2 } from 'lucide-react';
 
-export default function Courts({ tournament, getPlayerById, onSubmitRound, onSubmitCourt, updateTournament, toast }) {
+export default function Courts({ tournament, getPlayerById, onSubmitRound, onSubmitCourt, onRevertRound, updateTournament, toast }) {
   // Initialize scores from tournament state (persisted scores) or empty array
   const [scores, setScores] = useState(() => {
     return tournament.pendingScores || ['', '', '', ''];
@@ -232,8 +232,8 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
         })}
       </div>
       <div className="section">
-        <div className="row" style={{ justifyContent: 'center', marginTop: '15px' }}>
-            <button
+        <div className="row" style={{ justifyContent: 'center', marginTop: '15px', gap: '12px' }}>
+          <button
             className="btn primary"
             onClick={handleSubmit}
             disabled={!canSubmitRound}
@@ -246,6 +246,22 @@ export default function Courts({ tournament, getPlayerById, onSubmitRound, onSub
             <Send size={18} />
             Submit Round
           </button>
+          {tournament.lastRoundSnapshot && onRevertRound && (
+            <button
+              className="btn"
+              onClick={onRevertRound}
+              style={{ 
+                fontSize: '16px', 
+                padding: '12px 24px',
+                borderColor: 'var(--warning)',
+                color: 'var(--warning)'
+              }}
+              title="Revert the last submitted round"
+            >
+              <Undo2 size={18} />
+              Revert Last Round
+            </button>
+          )}
         </div>
         <div className="muted" style={{ textAlign: 'center', marginTop: '8px' }}>
           {!allCourtsSubmitted 
