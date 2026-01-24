@@ -930,7 +930,6 @@ function App() {
         onCreateLeague={adminAuth.isAdmin ? handleShowCreateModal : null}
         onEditLeague={adminAuth.isAdmin ? handleSelectLeagueForEdit : null}
         onNavigateToLeagues={() => setLeagueView('leagues')}
-        isAdmin={adminAuth.isAdmin}
       />
       <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
       <ConfirmDialog
