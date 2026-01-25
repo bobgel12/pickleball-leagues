@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   UserPlus, Users, Trash2, Upload, FileSpreadsheet,
   Save, RefreshCw, ArrowLeft, Dice1, Settings, DollarSign,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { LEAGUE_STATUS, DEFAULT_DUPR_RATING, MIN_DUPR_RATING, MAX_DUPR_RATING, LEAGUE_DEFAULTS, MONEY_ROUND_DEFAULTS, LEAGUE_MODE, GENDER, EVENT_DAY_RULES } from '../../utils/constants.js';
 import { parseCSV } from '../../utils/csvParser.js';
+import { loadPlayers } from '../../utils/apiStorage.js';
 
 export default function LeagueSetup({
   league,
@@ -14,6 +15,7 @@ export default function LeagueSetup({
   onUpdateMoneyRoundConfig,
   onRegisterPlayer,
   onRegisterPlayers,
+  onRegisterClubPlayers,
   onRemovePlayer,
   onSetStatus,
   onImportLeague,
@@ -30,6 +32,7 @@ export default function LeagueSetup({
   const [leagueName, setLeagueName] = useState(league.name);
   const [leagueMode, setLeagueMode] = useState(league.leagueMode || LEAGUE_MODE.REGULAR);
   const [scoringSystem, setScoringSystem] = useState(league.scoringSystem);
+  const [syncMatchesToDupr, setSyncMatchesToDupr] = useState(league.syncMatchesToDupr || 'never');
   const [totalEventDays, setTotalEventDays] = useState(league.totalEventDays);
   const [maxPlayers, setMaxPlayers] = useState(league.maxPlayers || LEAGUE_DEFAULTS.maxPlayers);
   const [maxPlayersPerDay, setMaxPlayersPerDay] = useState(league.maxPlayersPerDay || LEAGUE_DEFAULTS.maxPlayersPerDay);
@@ -60,6 +63,145 @@ export default function LeagueSetup({
   const [playerRating, setPlayerRating] = useState('');
   const [playerGender, setPlayerGender] = useState('');
   const [usedRandomNames, setUsedRandomNames] = useState(new Set());
+  const [clubDuprId, setClubDuprId] = useState('');
+  const [supportEmail, setSupportEmail] = useState('');
+  const [clubSettingsLoading, setClubSettingsLoading] = useState(false);
+  const handleImportClubPlayers = async () => {
+    try {
+      const clubPlayers = await loadPlayers();
+      if (!clubPlayers || clubPlayers.length === 0) {
+        if (toast) toast.warning('No club players found');
+        return;
+      }
+      const existingIds = new Set(league.registeredPlayers.map(p => String(p.id)));
+      const toAdd = clubPlayers.filter(p => p && !existingIds.has(String(p.id)));
+      if (toAdd.length === 0) {
+        if (toast) toast.warning('All club players are already registered');
+        return;
+      }
+      if (onRegisterClubPlayers) {
+        onRegisterClubPlayers(toAdd);
+      } else {
+        await onRegisterPlayers(toAdd);
+      }
+      if (toast) toast.success(`Added ${toAdd.length} club players`);
+    } catch (error) {
+      console.error('Failed to load club players:', error);
+      if (toast) toast.error('Failed to load club players');
+    }
+  };
+
+  const getClubSlug = () => (
+    sessionStorage.getItem('pickleball_club_slug') ||
+    localStorage.getItem('pickleball_club_slug') ||
+    null
+  );
+
+  const getStoredMasterKey = () => {
+    const clubSlug = getClubSlug();
+    if (!clubSlug) return null;
+    try {
+      const key = `pickleball_admin_auth_${clubSlug}`;
+      const authData = sessionStorage.getItem(key);
+      if (!authData) return null;
+      const parsed = JSON.parse(authData);
+      return parsed.masterKey || null;
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const loadClubSettings = async () => {
+      const clubSlug = getClubSlug();
+      if (!clubSlug) return;
+      setClubSettingsLoading(true);
+      try {
+        const response = await fetch(`/api/clubs/${clubSlug}/dupr-club`);
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (data?.club) {
+          setClubDuprId(data.club.dupr_club_id || '');
+          setSupportEmail(data.club.support_email || '');
+        }
+      } catch (error) {
+        console.error('Failed to load club settings:', error);
+      } finally {
+        setClubSettingsLoading(false);
+      }
+    };
+
+    loadClubSettings();
+  }, []);
+
+  const handleSaveClubSettings = async () => {
+    const clubSlug = getClubSlug();
+    if (!clubSlug) {
+      if (toast) toast.error('Select a club before saving settings');
+      return;
+    }
+    const masterKey = getStoredMasterKey();
+    if (!masterKey) {
+      if (toast) toast.error('Admin access required to save club settings');
+      return;
+    }
+
+    setClubSettingsLoading(true);
+    try {
+      const response = await fetch(`/api/clubs/${clubSlug}/dupr-club`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          masterKey,
+          duprClubId: clubDuprId || null,
+          supportEmail: supportEmail || null
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to save club settings');
+      }
+
+      if (toast) toast.success('Club settings saved');
+    } catch (error) {
+      console.error('Failed to save club settings:', error);
+      if (toast) toast.error(error.message || 'Failed to save club settings');
+    } finally {
+      setClubSettingsLoading(false);
+    }
+  };
+
+  const handleVerifyClubMembership = async () => {
+    if (!clubDuprId) {
+      if (toast) toast.error('Enter a DUPR Club ID to verify');
+      return;
+    }
+    try {
+      const response = await fetch(`/api/dupr/club-membership?duprClubId=${encodeURIComponent(clubDuprId)}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to verify club membership');
+      }
+      if (toast) toast.success('Club membership verified');
+    } catch (error) {
+      console.error('Club membership verification failed:', error);
+      if (toast) toast.error(error.message || 'Failed to verify club membership');
+    }
+  };
+
+  const handleLinkDupr = (playerId) => {
+    const clubSlug = getClubSlug();
+    if (!clubSlug) {
+      if (toast) toast.error('Select a club before linking DUPR');
+      return;
+    }
+    const returnTo = window.location.href;
+    const url = `/api/dupr/login?clubSlug=${encodeURIComponent(clubSlug)}&playerId=${encodeURIComponent(playerId)}&returnTo=${encodeURIComponent(returnTo)}`;
+    window.location.assign(url);
+  };
 
   const handleSaveConfig = () => {
     const parsedMaxPlayers = parseInt(maxPlayers) || LEAGUE_DEFAULTS.maxPlayers;
@@ -79,7 +221,8 @@ export default function LeagueSetup({
       maxPlayers: validatedMaxPlayers,
       maxPlayersPerDay: validatedMaxPerDay,
       moneyRoundEnabled,
-      eventDayRules
+      eventDayRules,
+      syncMatchesToDupr
     });
 
     // Update Money Round config if the function is provided
@@ -104,14 +247,14 @@ export default function LeagueSetup({
   const perEventTotal = perCourtTotal * 4;
   const fullLeagueTotal = perEventTotal * totalEventDays;
 
-  const handleAddPlayer = () => {
+  const handleAddPlayer = async () => {
     if (!playerName.trim()) return;
     
     const rating = playerRating ? parseFloat(playerRating) : DEFAULT_DUPR_RATING;
     const clampedRating = Math.max(MIN_DUPR_RATING, Math.min(MAX_DUPR_RATING, rating));
     const gender = leagueMode === LEAGUE_MODE.MIXED_DOUBLES && playerGender ? playerGender : null;
     
-    onRegisterPlayer(playerName.trim(), clampedRating, gender);
+    await onRegisterPlayer(playerName.trim(), clampedRating, gender);
     setPlayerName('');
     setPlayerRating('');
     setPlayerGender('');
@@ -119,7 +262,7 @@ export default function LeagueSetup({
     if (toast) toast.success(`${playerName.trim()} added to league`);
   };
 
-  const handleAddRandom = () => {
+  const handleAddRandom = async () => {
     const firstNames = [
       "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Cameron", "Drew",
       "Jamie", "Quinn", "Sam", "Blake", "Dakota", "Hayden", "Avery", "Parker",
@@ -188,13 +331,13 @@ export default function LeagueSetup({
       ? (Math.random() > 0.5 ? GENDER.MALE : GENDER.FEMALE)
       : null;
     
-    onRegisterPlayer(randomName, randomRating, randomGender);
+    await onRegisterPlayer(randomName, randomRating, randomGender);
     if (toast) toast.success(`${randomName} added to league`);
   };
 
   const handleImportCSV = (file) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const text = e.target.result;
         const playerNames = parseCSV(text);
@@ -221,7 +364,7 @@ export default function LeagueSetup({
           .map(name => ({ name, duprRating: rating }));
 
         if (newPlayers.length > 0) {
-          onRegisterPlayers(newPlayers);
+          await onRegisterPlayers(newPlayers);
           if (toast) toast.success(`Imported ${newPlayers.length} players`);
         } else {
           if (toast) toast.warning('All players from CSV already exist');
@@ -285,6 +428,50 @@ export default function LeagueSetup({
           Back to Dashboard
         </button>
       </div>
+
+      {/* Club DUPR Settings */}
+      <section className="card">
+        <h2 style={{ margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Settings size={20} />
+          Club DUPR Settings
+        </h2>
+        <div className="form-section">
+          <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>DUPR Club ID</label>
+              <input
+                type="text"
+                value={clubDuprId}
+                onChange={(e) => setClubDuprId(e.target.value)}
+                placeholder="Enter DUPR Club ID"
+              />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Support Email</label>
+              <input
+                type="email"
+                value={supportEmail}
+                onChange={(e) => setSupportEmail(e.target.value)}
+                placeholder="support@example.com"
+              />
+            </div>
+          </div>
+          <div className="form-row" style={{ gap: '8px' }}>
+            <button className="btn primary" onClick={handleSaveClubSettings} disabled={clubSettingsLoading}>
+              <Save size={16} />
+              Save Club Settings
+            </button>
+            <button className="btn" onClick={handleVerifyClubMembership} disabled={clubSettingsLoading || !clubDuprId}>
+              Verify DUPR Club Membership
+            </button>
+            {clubSettingsLoading && (
+              <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                Saving...
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* League Configuration */}
       <section className="card">
@@ -392,6 +579,19 @@ export default function LeagueSetup({
                   Mixed Doubles: 2 points for wins with partner, 1 point for wins with different partner
                 </small>
               )}
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Sync Matches to DUPR</label>
+              <select
+                value={syncMatchesToDupr}
+                onChange={(e) => setSyncMatchesToDupr(e.target.value)}
+              >
+                <option value="never">Never</option>
+                <option value="after_event_day">After Each Event Day</option>
+              </select>
+              <small style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                Only synced when all matches are completed
+              </small>
             </div>
           </div>
 
@@ -712,6 +912,15 @@ export default function LeagueSetup({
               <Dice1 size={16} />
               Add Random
             </button>
+            <button
+              className="btn"
+              onClick={handleImportClubPlayers}
+              disabled={!canRegisterPlayers}
+              title="Add players from club roster"
+            >
+              <Users size={16} />
+              Add From Club
+            </button>
             <label className="btn" htmlFor="csvImport" style={{ cursor: canRegisterPlayers ? 'pointer' : 'not-allowed' }}>
               <FileSpreadsheet size={16} />
               Import CSV
@@ -777,6 +986,18 @@ export default function LeagueSetup({
                         <span>{player.cumulativePoints} pts</span>
                         <span>{player.totalWins}W-{player.totalLosses}L</span>
                       </>
+                    )}
+                    {player.duprId ? (
+                      <span title="Linked via DUPR SSO">DUPR Linked</span>
+                    ) : (
+                      <button
+                        className="btn"
+                        style={{ padding: '4px 8px' }}
+                        onClick={() => handleLinkDupr(player.id)}
+                        title="Link DUPR account"
+                      >
+                        Link DUPR
+                      </button>
                     )}
                     <button
                       className="btn"

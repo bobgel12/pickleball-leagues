@@ -367,7 +367,9 @@ export default async function handler(req, res) {
             player:player_id (
               id,
               name,
+              dupr_id,
               dupr_rating,
+              dupr_rating_updated_at,
               gender,
               created_at
             )
@@ -420,7 +422,7 @@ export default async function handler(req, res) {
           if (missingPlayerIds.length > 0) {
             const { data: directPlayers, error: directError } = await supabase
               .from('players')
-              .select('id, name, dupr_rating, gender, created_at')
+              .select('id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at')
               .in('id', missingPlayerIds);
             
             if (directError) {
@@ -447,7 +449,9 @@ export default async function handler(req, res) {
           return {
             id: player.id || null,
             name: player.name || '',
+            duprId: player.dupr_id || null,
             duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+            duprRatingUpdatedAt: player.dupr_rating_updated_at || null,
             gender: player.gender || null,
             registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
             cumulativePoints: stats?.cumulative_points || 0,
@@ -623,7 +627,7 @@ export default async function handler(req, res) {
               if (syncedPlayerIds.length > 0) {
                 const { data: directSyncedPlayers } = await supabase
                   .from('players')
-                  .select('id, name, dupr_rating, gender, created_at')
+                  .select('id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at')
                   .in('id', syncedPlayerIds);
                 
                 (directSyncedPlayers || []).forEach(p => {
@@ -643,7 +647,9 @@ export default async function handler(req, res) {
                 return {
                   id: player.id || null,
                   name: player.name || '',
+                  duprId: player.dupr_id || null,
                   duprRating: player.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+                  duprRatingUpdatedAt: player.dupr_rating_updated_at || null,
                   gender: player.gender || null,
                   registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
                   cumulativePoints: stats?.cumulative_points || 0,
@@ -1071,7 +1077,9 @@ export default async function handler(req, res) {
           player:player_id (
             id,
             name,
+            dupr_id,
             dupr_rating,
+            dupr_rating_updated_at,
             gender
           ),
           stats:player_stats!player_stats_league_id_player_id_fkey (
@@ -1095,7 +1103,9 @@ export default async function handler(req, res) {
         return {
           id: player?.id || null,
           name: player?.name || '',
+          duprId: player?.dupr_id || null,
           duprRating: player?.dupr_rating ? parseFloat(player.dupr_rating) : 4.5,
+          duprRatingUpdatedAt: player?.dupr_rating_updated_at || null,
           gender: player?.gender || null,
           registeredAt: lp.registered_at ? new Date(lp.registered_at).getTime() : Date.now(),
           cumulativePoints: stats?.cumulative_points || 0,

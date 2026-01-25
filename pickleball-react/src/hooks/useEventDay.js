@@ -26,6 +26,7 @@ import {
   isMoneyRoundComplete
 } from '../utils/moneyRound.js';
 import { syncMatchToDatabase } from '../utils/apiStorage.js';
+import { syncMatchesToDupr } from '../utils/duprSync.js';
 
 const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
 
@@ -867,6 +868,54 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     return true;
   }, [currentEventDay, updateEventDay]);
 
+  // Sync completed event day matches to DUPR
+  const syncCompletedEventDayMatches = useCallback(async () => {
+    if (!currentEventDay) return;
+
+    const scheduleMatches = Array.isArray(currentEventDay.schedule) ? currentEventDay.schedule : [];
+    const moneyMatches = Array.isArray(currentEventDay.moneyRoundSchedule) ? currentEventDay.moneyRoundSchedule : [];
+    const matches = [...scheduleMatches, ...moneyMatches];
+
+    const results = await syncMatchesToDupr({
+      matches,
+      getPlayerById,
+      context: {
+        source: 'league',
+        leagueId: league.leagueId || league.league_id || league.id || null,
+        eventDayId: currentEventDay.id
+      }
+    });
+
+    const resultMap = new Map(
+      results
+        .filter(r => r && r.duprMatchId)
+        .map(r => [String(r.matchId), r])
+    );
+
+    if (resultMap.size === 0) return;
+
+    updateEventDay(currentEventDay.id, {
+      schedule: scheduleMatches.map(match => {
+        const result = resultMap.get(String(match.id));
+        if (!result) return match;
+        return {
+          ...match,
+          duprMatchId: result.duprMatchId,
+          duprSyncedAt: result.syncedAt
+        };
+      }),
+      moneyRoundSchedule: moneyMatches.map(match => {
+        const result = resultMap.get(String(match.id));
+        if (!result) return match;
+        return {
+          ...match,
+          duprMatchId: result.duprMatchId,
+          duprSyncedAt: result.syncedAt
+        };
+      })
+    });
+  }, [currentEventDay, getPlayerById, league, updateEventDay]);
+
   // Complete Money Round and calculate contributions
   const completeMoneyRound = useCallback((contributionScale) => {
     if (!currentEventDay) return false;
@@ -892,8 +941,14 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     // Complete the event day
     completeEventDay(currentEventDay.id, currentEventDay.ladderMovement);
 
+    if (league.syncMatchesToDupr === 'after_event_day') {
+      syncCompletedEventDayMatches().catch(error => {
+        console.error('DUPR sync failed after money round:', error);
+      });
+    }
+
     return moneyRoundResults;
-  }, [currentEventDay, updateEventDay, completeEventDay]);
+  }, [currentEventDay, updateEventDay, completeEventDay, league.syncMatchesToDupr, syncCompletedEventDayMatches]);
 
   // Close event day (legacy - now routes to appropriate phase completion)
   const closeEventDay = useCallback(() => {
@@ -908,6 +963,11 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
       // If Money Round is not enabled, complete the event day
       if (!currentEventDay.moneyRoundEnabled) {
         completeEventDay(currentEventDay.id, currentEventDay.ladderMovement || []);
+        if (league.syncMatchesToDupr === 'after_event_day') {
+          syncCompletedEventDayMatches().catch(error => {
+            console.error('DUPR sync failed after event day:', error);
+          });
+        }
       }
       
       return result !== false;
@@ -918,7 +978,9 @@ export function useEventDay(league, updateEventDay, updatePlayerStats, completeE
     currentEventDay,
     allMatchesCompleted,
     completeLeagueRound,
-    completeEventDay
+    completeEventDay,
+    league.syncMatchesToDupr,
+    syncCompletedEventDayMatches
   ]);
 
   // Get players available for check-in (type-safe: UUID or numeric IDs)

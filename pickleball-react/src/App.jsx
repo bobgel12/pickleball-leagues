@@ -15,6 +15,7 @@ import AdminLoginModal from './components/AdminLoginModal';
 import ClubSelector from './components/ClubSelector';
 import { parseScore, parseCSV } from './utils/csvParser';
 import { calculateMatchAwards, applyAwards, recalculatePointsFromMatches } from './utils/scoring';
+import { syncMatchesToDupr } from './utils/duprSync.js';
 import {
   initialSeedCourts,
   gradualSeedCourts,
@@ -73,6 +74,7 @@ function App() {
 
   // Admin login modal state
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [supportEmail, setSupportEmail] = useState('');
 
   // Update activeSection when admin status changes
   useEffect(() => {
@@ -81,6 +83,22 @@ function App() {
       setActiveSection('league');
     }
   }, [adminAuth.isAdmin, activeSection]);
+
+  useEffect(() => {
+    const loadSupportContact = async () => {
+      if (!clubSlug) return;
+      try {
+        const response = await fetch(`/api/clubs/${clubSlug}/dupr-club`);
+        if (!response.ok) return;
+        const data = await response.json();
+        setSupportEmail(data?.club?.support_email || '');
+      } catch (error) {
+        console.warn('Failed to load support contact:', error);
+      }
+    };
+
+    loadSupportContact();
+  }, [clubSlug]);
 
   // League state
   const leagueState = useLeagueState();
@@ -482,6 +500,8 @@ function App() {
       timestamp: Date.now()
     };
 
+    const newMatches = [];
+
     // Process all matches
     roundResults.forEach(result => {
       const court = currentTournament.courts[result.courtIndex] || [];
@@ -514,8 +534,9 @@ function App() {
       // Don't apply awards directly here - recalculatePointsFromMatches will handle it
       // This prevents double-counting since useEffect triggers recalculation after match is added
 
-      // Add match
-      tournament.addMatch({
+      const matchId = `${Date.now()}-${result.courtIndex}`;
+      const matchPayload = {
+        id: matchId,
         ts: Date.now(),
         court: result.courtIndex + 1,
         A: A.slice(),
@@ -525,7 +546,10 @@ function App() {
         scoreB: result.scoreB,
         system: scoringSystem,
         awards
-      });
+      };
+
+      newMatches.push(matchPayload);
+      tournament.addMatch(matchPayload);
     });
 
     // Build a local partner map so we can split teams immediately
@@ -595,6 +619,41 @@ function App() {
     tournament.setCourts(
       nextCourts.map(court => arrangeCourtTeams(court, getLocalLastPartner))
     );
+
+    const nextMatchesPlayed = (currentTournament.matchesPlayed || 0) + newMatches.length;
+    if (currentTournament.syncMatchesToDupr === 'after_tournament_end' &&
+        currentTournament.matchLimit &&
+        nextMatchesPlayed >= currentTournament.matchLimit) {
+      syncMatchesToDupr({
+        matches: [...(currentTournament.matches || []), ...newMatches],
+        getPlayerById: tournament.getPlayerById,
+        context: {
+          source: 'tournament',
+          tournamentId: currentTournament.id
+        }
+      }).then(results => {
+        const resultMap = new Map(
+          results
+            .filter(r => r && r.duprMatchId)
+            .map(r => [String(r.matchId), r])
+        );
+        if (resultMap.size === 0) return;
+        appState.updateTournament(currentTournament.id, (t) => ({
+          ...t,
+          matches: (t.matches || []).map(match => {
+            const result = resultMap.get(String(match.id));
+            if (!result) return match;
+            return {
+              ...match,
+              duprMatchId: result.duprMatchId,
+              duprSyncedAt: result.syncedAt
+            };
+          })
+        }));
+      }).catch(error => {
+        console.error('DUPR sync failed after tournament end:', error);
+      });
+    }
 
     // Only clear submitted courts and pending scores after successful processing
     // This ensures scores persist even if there was an error earlier
@@ -694,6 +753,14 @@ function App() {
       toast.success('App reset successfully');
     }
   }, [appState, confirmDialog, toast]);
+
+  const handleSetTournamentSync = useCallback((syncOption) => {
+    if (!appState.currentTournament) return;
+    appState.updateTournament(appState.currentTournament.id, (t) => ({
+      ...t,
+      syncMatchesToDupr: syncOption
+    }));
+  }, [appState]);
 
   // League handlers
   const handleLeagueNavigate = useCallback((view) => {
@@ -879,6 +946,7 @@ function App() {
             onUpdateMoneyRoundConfig={leagueState.updateMoneyRoundConfig}
             onRegisterPlayer={leagueState.registerPlayer}
             onRegisterPlayers={leagueState.registerPlayers}
+            onRegisterClubPlayers={leagueState.registerClubPlayers}
             onRemovePlayer={leagueState.removePlayer}
             onSetStatus={leagueState.setLeagueStatus}
             onImportLeague={leagueState.importLeague}
@@ -1039,6 +1107,7 @@ function App() {
             }}
             onSetMatchLimit={tournament.setMatchLimit}
             onSetScoringSystem={tournament.setScoringSystem}
+            onSetSyncMatchesToDupr={handleSetTournamentSync}
             onFairSeed={handleFairSeed}
             onGradualSeed={handleGradualSeed}
             onClassicSeed={handleClassicSeed}
@@ -1083,7 +1152,7 @@ function App() {
             onAdjustSeed={handleAdjustSeed}
             getPlayerById={tournament.getPlayerById}
           />
-          <LegalDisclaimer />
+          <LegalDisclaimer supportEmail={supportEmail} />
         </main>
       )}
 
@@ -1093,7 +1162,7 @@ function App() {
           {renderLeagueSection()}
           <LeagueHelp league={leagueState.league} />
           <LeagueTemplateRulesHelp />
-          <LegalDisclaimer />
+          <LegalDisclaimer supportEmail={supportEmail} />
         </main>
       )}
 

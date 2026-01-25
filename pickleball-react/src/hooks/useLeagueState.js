@@ -26,7 +26,7 @@ import {
   createDefaultClub,
   normalizeClub
 } from '../utils/leagueStorage.js';
-import { loadLeagueData, saveLeagueData, loadAllLeagues, createLeague as createLeagueApi, deleteLeague as deleteLeagueApi } from '../utils/apiStorage.js';
+import { loadLeagueData, saveLeagueData, loadAllLeagues, createLeague as createLeagueApi, deleteLeague as deleteLeagueApi, createPlayer as createPlayerApi } from '../utils/apiStorage.js';
 import {
   fetchClubById,
   fetchAllClubs,
@@ -160,8 +160,13 @@ export function useLeagueState() {
             
             // Update counters
             if (normalized.registeredPlayers.length > 0) {
-              const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
-              setPlayerIdCounter(maxPlayerId + 1);
+              const numericIds = normalized.registeredPlayers
+                .map(p => (p && !String(p.id).includes('-') ? Number(p.id) : NaN))
+                .filter(id => Number.isFinite(id));
+              if (numericIds.length > 0) {
+                const maxPlayerId = Math.max(...numericIds);
+                setPlayerIdCounter(maxPlayerId + 1);
+              }
             }
             if (normalized.eventDays.length > 0) {
               const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
@@ -275,10 +280,42 @@ export function useLeagueState() {
   }, []);
 
   // Register a new player
-  const registerPlayer = useCallback((name, duprRating = DEFAULT_DUPR_RATING, gender = null) => {
+  const registerPlayer = useCallback(async (name, duprRating = DEFAULT_DUPR_RATING, gender = null) => {
+    if (!name || !name.trim()) return null;
+    const playerName = name.trim();
+
+    if (clubSlug) {
+      try {
+        const created = await createPlayerApi(null, {
+          name: playerName,
+          duprRating,
+          gender
+        });
+        const player = {
+          ...createLeaguePlayer(created.id, created.name, created.duprRating, created.gender),
+          duprId: created.duprId || null,
+          duprRatingUpdatedAt: created.duprRatingUpdatedAt || null
+        };
+
+        setLeague(prev => {
+          if (prev.registeredPlayers.length >= prev.maxPlayers) {
+            console.warn('Maximum players reached');
+            return prev;
+          }
+          return {
+            ...prev,
+            registeredPlayers: [...prev.registeredPlayers, player]
+          };
+        });
+
+        return player;
+      } catch (error) {
+        console.error('Error creating club player:', error);
+      }
+    }
+
     const id = generatePlayerId();
-    const player = createLeaguePlayer(id, name, duprRating, gender);
-    
+    const player = createLeaguePlayer(id, playerName, duprRating, gender);
     setLeague(prev => {
       if (prev.registeredPlayers.length >= prev.maxPlayers) {
         console.warn('Maximum players reached');
@@ -291,25 +328,77 @@ export function useLeagueState() {
     });
 
     return player;
-  }, [generatePlayerId]);
+  }, [clubSlug, generatePlayerId]);
 
   // Register multiple players at once
-  const registerPlayers = useCallback((players) => {
+  const registerPlayers = useCallback(async (players) => {
+    if (!Array.isArray(players) || players.length === 0) return;
+
+    if (clubSlug) {
+      const createdPlayers = [];
+      for (const p of players) {
+        try {
+          const created = await createPlayerApi(null, {
+            name: p.name,
+            duprRating: p.duprRating || DEFAULT_DUPR_RATING,
+            gender: p.gender || null
+          });
+          createdPlayers.push({
+            ...createLeaguePlayer(created.id, created.name, created.duprRating, created.gender),
+            duprId: created.duprId || null,
+            duprRatingUpdatedAt: created.duprRatingUpdatedAt || null
+          });
+        } catch (error) {
+          console.error('Error creating club player:', error);
+        }
+      }
+
+      if (createdPlayers.length > 0) {
+        setLeague(prev => ({
+          ...prev,
+          registeredPlayers: [...prev.registeredPlayers, ...createdPlayers]
+        }));
+      }
+      return;
+    }
+
     setLeague(prev => {
       const availableSlots = prev.maxPlayers - prev.registeredPlayers.length;
       const newPlayers = players.slice(0, availableSlots).map((p, index) => {
         const id = playerIdCounter + index;
         return createLeaguePlayer(id, p.name, p.duprRating || DEFAULT_DUPR_RATING, p.gender || null);
       });
-      
+
       setPlayerIdCounter(prev => prev + newPlayers.length);
-      
+
       return {
         ...prev,
         registeredPlayers: [...prev.registeredPlayers, ...newPlayers]
       };
     });
-  }, [playerIdCounter]);
+  }, [clubSlug, playerIdCounter]);
+
+  const registerClubPlayers = useCallback((clubPlayers) => {
+    if (!Array.isArray(clubPlayers) || clubPlayers.length === 0) return;
+
+    setLeague(prev => {
+      const existingIds = new Set(prev.registeredPlayers.map(p => String(p.id)));
+      const newPlayers = clubPlayers
+        .filter(p => p && !existingIds.has(String(p.id)))
+        .map(p => ({
+          ...createLeaguePlayer(p.id, p.name, p.duprRating || DEFAULT_DUPR_RATING, p.gender || null),
+          duprId: p.duprId || null,
+          duprRatingUpdatedAt: p.duprRatingUpdatedAt || null
+        }));
+
+      if (newPlayers.length === 0) return prev;
+
+      return {
+        ...prev,
+        registeredPlayers: [...prev.registeredPlayers, ...newPlayers]
+      };
+    });
+  }, []);
 
   // Remove a player
   const removePlayer = useCallback((playerId) => {
@@ -455,8 +544,13 @@ export function useLeagueState() {
       
       // Update counters
       if (imported.registeredPlayers.length > 0) {
-        const maxPlayerId = Math.max(...imported.registeredPlayers.map(p => p.id));
-        setPlayerIdCounter(maxPlayerId + 1);
+        const numericIds = imported.registeredPlayers
+          .map(p => (p && !String(p.id).includes('-') ? Number(p.id) : NaN))
+          .filter(id => Number.isFinite(id));
+        if (numericIds.length > 0) {
+          const maxPlayerId = Math.max(...numericIds);
+          setPlayerIdCounter(maxPlayerId + 1);
+        }
       }
       if (imported.eventDays.length > 0) {
         const maxDayId = Math.max(...imported.eventDays.map(d => d.id));
@@ -1024,8 +1118,13 @@ export function useLeagueState() {
         
         // Update counters
         if (normalized.registeredPlayers.length > 0) {
-          const maxPlayerId = Math.max(...normalized.registeredPlayers.map(p => p.id));
-          setPlayerIdCounter(maxPlayerId + 1);
+          const numericIds = normalized.registeredPlayers
+            .map(p => (p && !String(p.id).includes('-') ? Number(p.id) : NaN))
+            .filter(id => Number.isFinite(id));
+          if (numericIds.length > 0) {
+            const maxPlayerId = Math.max(...numericIds);
+            setPlayerIdCounter(maxPlayerId + 1);
+          }
         }
         if (normalized.eventDays.length > 0) {
           const maxDayId = Math.max(...normalized.eventDays.map(d => d.id));
@@ -1241,6 +1340,7 @@ export function useLeagueState() {
     // Player actions
     registerPlayer,
     registerPlayers,
+    registerClubPlayers,
     removePlayer,
     updatePlayer,
     getPlayerById,

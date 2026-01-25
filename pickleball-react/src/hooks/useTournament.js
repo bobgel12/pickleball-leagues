@@ -47,7 +47,13 @@ export function useTournament(appState) {
       ? Math.max(MIN_DUPR_RATING, Math.min(MAX_DUPR_RATING, Math.round(s * 1000) / 1000))
       : DEFAULT_DUPR_RATING;
     const newId = generatePlayerId();
-    const newPlayer = { id: newId, name: name.trim(), seed: duprScore, points: 0 };
+    const newPlayer = {
+      id: newId,
+      name: name.trim(),
+      seed: duprScore,
+      points: 0,
+      duprId: options.duprId || null
+    };
 
     updateTournament(currentTournament.id, (tournament) => ({
       ...tournament,

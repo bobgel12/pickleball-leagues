@@ -43,6 +43,7 @@ export function createDefaultLeague(overrides = {}) {
     totalEventDays: LEAGUE_DEFAULTS.totalEventDays,
     scoringSystem: 'court',
     leagueMode: LEAGUE_MODE.REGULAR, // 'regular' or 'mixed_doubles'
+    syncMatchesToDupr: 'never',
     registeredPlayers: [],
     eventDays: [],
     currentEventDayIndex: -1,
@@ -85,6 +86,8 @@ export function createLeaguePlayer(id, name, duprRating, gender = null) {
     id,
     name,
     duprRating: duprRating || 4.5,
+    duprId: null,
+    duprRatingUpdatedAt: null,
     gender: gender || null, // 'male', 'female', or null
     cumulativePoints: 0,
     totalWins: 0,

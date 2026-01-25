@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus, Users, Dice1, Target, Shuffle, RotateCcw, RefreshCw, Download, Upload, FileSpreadsheet, Trophy, TrendingUp } from 'lucide-react';
+import { loadPlayers } from '../utils/apiStorage.js';
 
 export default function PlayerManagement({
   tournament,
@@ -8,6 +9,7 @@ export default function PlayerManagement({
   onAddRandom16,
   onSetMatchLimit,
   onSetScoringSystem,
+  onSetSyncMatchesToDupr,
   onFairSeed,
   onGradualSeed,
   onClassicSeed,
@@ -38,6 +40,22 @@ export default function PlayerManagement({
   const handleAddRandom16 = () => {
     for (let i = 0; i < 16; i++) {
       onAddRandomPlayer();
+    }
+  };
+
+  const handleAddFromClub = async () => {
+    try {
+      const clubPlayers = await loadPlayers();
+      if (!clubPlayers || clubPlayers.length === 0) {
+        return;
+      }
+      const existingNames = new Set((tournament.players || []).map(p => p.name.toLowerCase()));
+      const toAdd = clubPlayers.filter(p => p?.name && !existingNames.has(p.name.toLowerCase()));
+      toAdd.forEach(player => {
+        onAddPlayer(player.name, player.duprRating, { duprId: player.duprId || null });
+      });
+    } catch (error) {
+      console.error('Failed to load club players:', error);
     }
   };
 
@@ -93,6 +111,14 @@ export default function PlayerManagement({
             <Users size={16} />
             Add 16 Random
           </button>
+          <button
+            className="btn"
+            onClick={handleAddFromClub}
+            title="Add players from club roster"
+          >
+            <Users size={16} />
+            Add From Club
+          </button>
         </div>
         <div className="row muted">
           <strong>DUPR Ratings:</strong> 2.000-8.000 (3 decimal places). <strong>Fair Seed Courts:</strong> Balanced teams across skill tiers. <strong>Gradual Start:</strong> Top 8 players start on Courts 1-2, others join later.
@@ -129,6 +155,20 @@ export default function PlayerManagement({
           </select>
           <span className="muted" style={{ fontSize: '11px', marginLeft: '8px' }}>
             {scoringExplanations[tournament.scoringSystem || 'simple']}
+          </span>
+        </div>
+        <div className="row">
+          <label className="muted">Sync matches to DUPR:</label>
+          <select
+            style={{ width: '220px' }}
+            value={tournament.syncMatchesToDupr || 'never'}
+            onChange={(e) => onSetSyncMatchesToDupr(e.target.value)}
+          >
+            <option value="never">Never</option>
+            <option value="after_tournament_end">After Tournament End</option>
+          </select>
+          <span className="muted" style={{ fontSize: '11px', marginLeft: '8px' }}>
+            Sync only when the tournament is ended
           </span>
         </div>
         <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>

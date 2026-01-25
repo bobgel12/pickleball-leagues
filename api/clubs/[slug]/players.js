@@ -53,7 +53,7 @@ export default async function handler(req, res) {
       if (playerId) {
         const { data: player, error } = await supabase
           .from('players')
-          .select('id, club_id, name, dupr_rating, gender, created_at, updated_at')
+          .select('id, club_id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at, updated_at')
           .eq('id', playerId)
           .eq('club_id', clubId)
           .single();
@@ -87,7 +87,9 @@ export default async function handler(req, res) {
             id: player.id,
             clubId: player.club_id,
             name: player.name,
+            duprId: player.dupr_id || null,
             duprRating: parseFloat(player.dupr_rating),
+            duprRatingUpdatedAt: player.dupr_rating_updated_at,
             gender: player.gender,
             createdAt: player.created_at,
             updatedAt: player.updated_at,
@@ -110,7 +112,7 @@ export default async function handler(req, res) {
       // Otherwise, return list of all players for the club
       const { data: players, error } = await supabase
         .from('players')
-        .select('id, club_id, name, dupr_rating, gender, created_at, updated_at')
+        .select('id, club_id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at, updated_at')
         .eq('club_id', clubId)
         .order('name', { ascending: true });
 
@@ -123,7 +125,9 @@ export default async function handler(req, res) {
           id: p.id,
           clubId: p.club_id,
           name: p.name,
+          duprId: p.dupr_id || null,
           duprRating: parseFloat(p.dupr_rating),
+          duprRatingUpdatedAt: p.dupr_rating_updated_at,
           gender: p.gender,
           createdAt: p.created_at,
           updatedAt: p.updated_at
@@ -164,7 +168,7 @@ export default async function handler(req, res) {
           dupr_rating: duprRating || 4.50,
           gender: gender || null
         })
-        .select('id, club_id, name, dupr_rating, gender, created_at, updated_at')
+        .select('id, club_id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at, updated_at')
         .single();
 
       if (error) {
@@ -177,7 +181,9 @@ export default async function handler(req, res) {
           id: player.id,
           clubId: player.club_id,
           name: player.name,
+          duprId: player.dupr_id || null,
           duprRating: parseFloat(player.dupr_rating),
+          duprRatingUpdatedAt: player.dupr_rating_updated_at,
           gender: player.gender,
           createdAt: player.created_at,
           updatedAt: player.updated_at
@@ -243,7 +249,7 @@ export default async function handler(req, res) {
         .from('players')
         .update(updates)
         .eq('id', targetPlayerId)
-        .select('id, club_id, name, dupr_rating, gender, created_at, updated_at')
+        .select('id, club_id, name, dupr_id, dupr_rating, dupr_rating_updated_at, gender, created_at, updated_at')
         .single();
 
       if (error) {
@@ -256,7 +262,9 @@ export default async function handler(req, res) {
           id: player.id,
           clubId: player.club_id,
           name: player.name,
+          duprId: player.dupr_id || null,
           duprRating: parseFloat(player.dupr_rating),
+          duprRatingUpdatedAt: player.dupr_rating_updated_at,
           gender: player.gender,
           createdAt: player.created_at,
           updatedAt: player.updated_at

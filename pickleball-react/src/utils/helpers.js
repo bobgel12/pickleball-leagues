@@ -25,7 +25,8 @@ export function createDefaultTournament(overrides = {}) {
     lastPartners: (overrides.lastPartners && typeof overrides.lastPartners === "object") ? overrides.lastPartners : {},
     scoringSystem: overrides.scoringSystem ?? "court",
     pendingScores: Array.isArray(overrides.pendingScores) ? overrides.pendingScores : ['', '', '', ''],
-    submittedCourts: Array.isArray(overrides.submittedCourts) ? overrides.submittedCourts : []
+    submittedCourts: Array.isArray(overrides.submittedCourts) ? overrides.submittedCourts : [],
+    syncMatchesToDupr: overrides.syncMatchesToDupr ?? 'never'
   };
 }
 
@@ -41,6 +42,9 @@ export function normalizeTournament(raw) {
   }
   if (typeof raw.scoringSystem === "string" && raw.scoringSystem.trim()) {
     tournament.scoringSystem = raw.scoringSystem.trim();
+  }
+  if (typeof raw.syncMatchesToDupr === "string" && raw.syncMatchesToDupr.trim()) {
+    tournament.syncMatchesToDupr = raw.syncMatchesToDupr.trim();
   }
 
   // Handle players array - be more defensive about the data structure
