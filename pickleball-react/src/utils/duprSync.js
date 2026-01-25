@@ -36,7 +36,7 @@ export async function syncMatchesToDupr({ matches, getPlayerById, context }) {
     const payload = buildMatchPayload({ match, teamAIds, teamBIds, context });
 
     try {
-      const response = await fetch('/api/dupr/matches', {
+      const response = await fetch('/api/dupr?action=match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

@@ -180,7 +180,7 @@ export default function LeagueSetup({
       return;
     }
     try {
-      const response = await fetch(`/api/dupr/club-membership?duprClubId=${encodeURIComponent(clubDuprId)}`);
+      const response = await fetch(`/api/dupr?action=clubMembership&duprClubId=${encodeURIComponent(clubDuprId)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to verify club membership');
@@ -199,7 +199,7 @@ export default function LeagueSetup({
       return;
     }
     const returnTo = window.location.href;
-    const url = `/api/dupr/login?clubSlug=${encodeURIComponent(clubSlug)}&playerId=${encodeURIComponent(playerId)}&returnTo=${encodeURIComponent(returnTo)}`;
+    const url = `/api/dupr?action=login&clubSlug=${encodeURIComponent(clubSlug)}&playerId=${encodeURIComponent(playerId)}&returnTo=${encodeURIComponent(returnTo)}`;
     window.location.assign(url);
   };
 
